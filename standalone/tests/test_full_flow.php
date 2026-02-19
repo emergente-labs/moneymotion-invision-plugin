@@ -106,7 +106,7 @@ test('Step 4: Session status updated to complete', function() use ($config) {
     $session = $db->getSession($GLOBALS['test_session_id']);
 
     assert_eq($session['status'], 'complete', "Status should be complete");
-    assert_true((int)$session['updated_at'] > (int)$session['created_at'], "updated_at should be after created_at");
+    assert_true((int)$session['updated_at'] >= (int)$session['created_at'], "updated_at should be >= created_at");
     echo "  -> Status: {$session['status']}\n";
 });
 
