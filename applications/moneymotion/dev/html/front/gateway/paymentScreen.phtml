@@ -1,0 +1,16 @@
+<ips:template parameters="$gateway, $invoice, $amount" />
+
+<div class="ipsBox ipsPad">
+	<div class="ipsType_center">
+		<p class="ipsType_large ipsSpacer_bottom">
+			{lang="moneymotion_redirect_message"}
+		</p>
+		<p class="ipsType_light ipsSpacer_bottom">
+			{lang="moneymotion_pay_button"}: <strong>{$amount}</strong>
+		</p>
+		<input type="hidden" name="paymentMethod" value="{$gateway->id}">
+		<button type="submit" class="ipsButton ipsButton_primary ipsButton_large">
+			<i class="fa fa-credit-card"></i> &nbsp; {lang="moneymotion_pay_button"}
+		</button>
+	</div>
+</div>

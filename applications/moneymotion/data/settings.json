@@ -1,0 +1,10 @@
+[
+	{
+		"key": "moneymotion_api_key",
+		"default": ""
+	},
+	{
+		"key": "moneymotion_webhook_secret",
+		"default": ""
+	}
+]

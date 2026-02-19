@@ -1,0 +1,21 @@
+{
+	"topLevel": "moneymotion",
+	"pages": {
+		"webhook": {
+			"friendly": "moneymotion/webhook",
+			"real": "app=moneymotion&module=gateway&controller=webhook"
+		},
+		"webhook_success": {
+			"friendly": "moneymotion/webhook/success",
+			"real": "app=moneymotion&module=gateway&controller=webhook&do=success"
+		},
+		"webhook_cancel": {
+			"friendly": "moneymotion/webhook/cancel",
+			"real": "app=moneymotion&module=gateway&controller=webhook&do=cancel"
+		},
+		"webhook_failure": {
+			"friendly": "moneymotion/webhook/failure",
+			"real": "app=moneymotion&module=gateway&controller=webhook&do=failure"
+		}
+	}
+}

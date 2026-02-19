@@ -1,0 +1,90 @@
+{
+	"moneymotion_sessions": {
+		"columns": {
+			"session_id": {
+				"type": "VARCHAR",
+				"length": 255,
+				"allow_null": false,
+				"default": "",
+				"comment": "MoneyMotion checkout session ID"
+			},
+			"transaction_id": {
+				"type": "BIGINT",
+				"length": 20,
+				"unsigned": true,
+				"allow_null": false,
+				"default": 0,
+				"comment": "IPS nexus transaction ID"
+			},
+			"invoice_id": {
+				"type": "BIGINT",
+				"length": 20,
+				"unsigned": true,
+				"allow_null": false,
+				"default": 0,
+				"comment": "IPS nexus invoice ID"
+			},
+			"amount_cents": {
+				"type": "INT",
+				"length": 11,
+				"allow_null": false,
+				"default": 0,
+				"comment": "Amount in cents"
+			},
+			"currency": {
+				"type": "VARCHAR",
+				"length": 3,
+				"allow_null": false,
+				"default": "EUR",
+				"comment": "Currency code"
+			},
+			"status": {
+				"type": "VARCHAR",
+				"length": 32,
+				"allow_null": false,
+				"default": "pending",
+				"comment": "Session status: pending, complete, failed, cancelled, refunded"
+			},
+			"created_at": {
+				"type": "INT",
+				"length": 10,
+				"allow_null": false,
+				"default": 0,
+				"comment": "Unix timestamp of creation"
+			},
+			"updated_at": {
+				"type": "INT",
+				"length": 10,
+				"allow_null": false,
+				"default": 0,
+				"comment": "Unix timestamp of last update"
+			}
+		},
+		"indexes": {
+			"PRIMARY": {
+				"type": "primary",
+				"columns": [
+					"session_id"
+				]
+			},
+			"transaction_id": {
+				"type": "key",
+				"columns": [
+					"transaction_id"
+				]
+			},
+			"invoice_id": {
+				"type": "key",
+				"columns": [
+					"invoice_id"
+				]
+			},
+			"status": {
+				"type": "key",
+				"columns": [
+					"status"
+				]
+			}
+		}
+	}
+}
