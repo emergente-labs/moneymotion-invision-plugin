@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD033 -->
 <div align="center">
 
-![MoneyMotion Hero](hero.png)
+![MoneyMotion Hero](images/hero.png)
 
 <!--
 To get rounded top corners, use this CSS in your markdown renderer:
