@@ -2,7 +2,8 @@
 ![moneymotion Logo](images/hero.png)
 <!-- markdownlint-enable MD041 -->
 
-# moneymotion Payment Gateway for Invision Community
+# moneymotion 
+## Payment Gateway for Invision Community
 
 Accept global payments seamlessly with moneymotion on your Invision Community platform.
 
