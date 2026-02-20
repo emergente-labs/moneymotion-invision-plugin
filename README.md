@@ -1,10 +1,10 @@
 <!-- markdownlint-disable MD041 -->
-![MoneyMotion Logo](images/hero.png)
+![moneymotion Logo](images/hero.png)
 <!-- markdownlint-enable MD041 -->
 
-# MoneyMotion Payment Gateway for Invision Community
+# moneymotion Payment Gateway for Invision Community
 
-Accept global payments seamlessly with MoneyMotion on your Invision Community platform.
+Accept global payments seamlessly with moneymotion on your Invision Community platform.
 
 ---
 
@@ -14,8 +14,8 @@ Accept global payments seamlessly with MoneyMotion on your Invision Community pl
 
 - **Invision Community** 4.7+ with Commerce enabled
 - **Full IPS License** (not demo mode)
-- **MoneyMotion Account** with API key
-- **HTTPS** (required by MoneyMotion)
+- **moneymotion Account** with API key
+- **HTTPS** (required by moneymotion)
 
 ### Installation
 
@@ -31,12 +31,12 @@ Accept global payments seamlessly with MoneyMotion on your Invision Community pl
 ### In Your IPS Community
 
 1. Go to **ACP > Commerce > Payment Methods > Add Method**
-2. Select **MoneyMotion** as gateway
+2. Select **moneymotion** as gateway
 3. Enter your **API Key** (starts with `mk_live_` or `mk_test_`)
-4. Enter your **Webhook Secret** (from MoneyMotion dashboard)
+4. Enter your **Webhook Secret** (from moneymotion dashboard)
 5. Save
 
-### In Your MoneyMotion Dashboard
+### In Your moneymotion Dashboard
 
 1. Go to **Webhooks**
 2. Create webhook: `https://your-community.com/moneymotion/webhook/`
@@ -50,16 +50,16 @@ Accept global payments seamlessly with MoneyMotion on your Invision Community pl
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
-│  1. Customer clicks "Pay with MoneyMotion"                 │
+│  1. Customer clicks "Pay with moneymotion"                 │
 │                         ↓                                  │
-│  2. Creates checkout session at MoneyMotion API            │
+│  2. Creates checkout session at moneymotion API            │
 │                         ↓                                  │
-│  3. Redirects to MoneyMotion checkout page                 │
+│  3. Redirects to moneymotion checkout page                 │
 │         (https://moneymotion.io/checkout/{id})             │
 │                         ↓                                  │
 │  4. Customer enters payment details & confirms             │
 │                         ↓                                  │
-│  5. MoneyMotion processes payment                          │
+│  5. moneymotion processes payment                          │
 │                         ↓                                  │
 │  6. Webhook sent to your IPS community                     │
 │         (checkout_session:complete event)                  │
@@ -83,24 +83,24 @@ Accept global payments seamlessly with MoneyMotion on your Invision Community pl
 ### "Invalid API Key"
 
 - Verify key starts with `mk_live_` (production) or `mk_test_`
-- Check your MoneyMotion account is active
+- Check your moneymotion account is active
 
 ### Webhook Not Being Called
 
 - Confirm webhook URL: `https://your-domain.com/moneymotion/webhook/`
 - Verify `checkout_session:complete` event is subscribed
-- Check MoneyMotion dashboard webhook logs
+- Check moneymotion dashboard webhook logs
 
 ### "URL must use HTTPS"
 
-- MoneyMotion requires HTTPS for all callback URLs
+- moneymotion requires HTTPS for all callback URLs
 - Use valid SSL certificate (self-signed may fail)
 
 ---
 
 ## 📚 Resources
 
-- [MoneyMotion Documentation](https://docs.moneymotion.io)
+- [moneymotion Documentation](https://docs.moneymotion.io)
 - [Invision Community Forums](https://invisioncommunity.com)
 - [REST API Reference](https://invisioncommunity.com/developers/rest-api)
 
