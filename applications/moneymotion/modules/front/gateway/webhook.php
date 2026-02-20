@@ -15,7 +15,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Route incoming requests
 	 *
-	 * @return	void
+	 * @return void
 	 */
 	protected function manage()
 	{
@@ -25,7 +25,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Handle MoneyMotion webhook
 	 *
-	 * @return	void
+	 * @return void
 	 */
 	protected function webhook()
 	{
@@ -34,6 +34,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 
 		if ( empty( $rawBody ) )
 		{
+			\IPS\Log::log( "MoneyMotion webhook: empty body rejected", 'moneymotion' );
 			\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Empty body' ) ), 400, 'application/json' );
 			return;
 		}
@@ -43,39 +44,84 @@ class _webhook extends \IPS\Dispatcher\Controller
 
 		if ( !$payload || !isset( $payload['event'] ) )
 		{
+			\IPS\Log::log( "MoneyMotion webhook: invalid payload rejected", 'moneymotion' );
 			\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Invalid payload' ) ), 400, 'application/json' );
 			return;
 		}
 
-		/* Find the gateway to get the webhook secret */
-		$gateway = $this->findGateway();
-
-		if ( $gateway )
+		/* Validate timestamp to prevent replay attacks (5 minute window) */
+		$timestamp = isset( $payload['timestamp'] ) ? $payload['timestamp'] : 0;
+		if ( $timestamp )
 		{
-			$settings = json_decode( $gateway->settings, TRUE );
-			$webhookSecret = isset( $settings['webhook_secret'] ) ? $settings['webhook_secret'] : '';
-
-			/* Verify signature if we have a secret */
-			if ( !empty( $webhookSecret ) )
+			$currentTime = time();
+			if ( abs( $currentTime - $timestamp ) > 300 )
 			{
-				$signature = isset( $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] ) ? $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] : '';
-
-				if ( empty( $signature ) )
-				{
-					$signature = isset( $_SERVER['HTTP_X_SIGNATURE'] ) ? $_SERVER['HTTP_X_SIGNATURE'] : '';
-				}
-
-				if ( !empty( $signature ) && !\IPS\moneymotion\Api\Client::verifyWebhookSignature( $rawBody, $signature, $webhookSecret ) )
-				{
-					\IPS\Log::log( "MoneyMotion webhook signature verification failed", 'moneymotion' );
-					\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Invalid signature' ) ), 401, 'application/json' );
-					return;
-				}
+				\IPS\Log::log( "MoneyMotion webhook: timestamp validation failed (event timestamp: {$timestamp}, current: {$currentTime})", 'moneymotion' );
+				\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Webhook timestamp too old' ) ), 401, 'application/json' );
+				return;
 			}
 		}
 
+		/* Rate limiting: check if IP has sent too many webhooks recently (max 10 per minute) */
+		$clientIp = $this->getClientIp();
+		$rateLimitKey = "moneymotion_webhook_rate_{$clientIp}";
+		$cache = \IPS\Data\Store::i();
+		$attemptCount = (int) $cache->$rateLimitKey;
+
+		if ( $attemptCount >= 10 )
+		{
+			\IPS\Log::log( "MoneyMotion webhook: rate limit exceeded for IP {$clientIp}", 'moneymotion' );
+			\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Rate limit exceeded' ) ), 429, 'application/json' );
+			return;
+		}
+
+		$cache->setWithExpiration( $rateLimitKey, $attemptCount + 1, \IPS\DateTime::create()->add( new \DateInterval( 'PT1M' ) ) );
+
+		/* Find the gateway to get the webhook secret */
+		$gateway = $this->findGateway();
+
+		if ( !$gateway )
+		{
+			\IPS\Log::log( "MoneyMotion webhook: gateway not configured", 'moneymotion' );
+			\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Gateway not configured' ) ), 500, 'application/json' );
+			return;
+		}
+
+		$settings = json_decode( $gateway->settings, TRUE );
+		$webhookSecret = isset( $settings['webhook_secret'] ) ? $settings['webhook_secret'] : '';
+
+		/* Webhook secret is MANDATORY - reject unsigned webhooks */
+		if ( empty( $webhookSecret ) )
+		{
+			\IPS\Log::log( "MoneyMotion webhook: webhook secret not configured in gateway settings - SECURITY RISK", 'moneymotion' );
+			\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Webhook secret not configured' ) ), 500, 'application/json' );
+			return;
+		}
+
+		/* Verify signature */
+		$signature = isset( $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] ) ? $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] : '';
+
+		if ( empty( $signature ) )
+		{
+			$signature = isset( $_SERVER['HTTP_X_SIGNATURE'] ) ? $_SERVER['HTTP_X_SIGNATURE'] : '';
+		}
+
+		if ( empty( $signature ) )
+		{
+			\IPS\Log::log( "MoneyMotion webhook: signature missing from request headers for IP {$clientIp}", 'moneymotion' );
+			\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Signature missing' ) ), 401, 'application/json' );
+			return;
+		}
+
+		if ( !$this->verifyWebhookSignature( $rawBody, $signature, $webhookSecret ) )
+		{
+			\IPS\Log::log( "MoneyMotion webhook: signature verification failed for IP {$clientIp}, event: {$payload['event']}", 'moneymotion' );
+			\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Invalid signature' ) ), 401, 'application/json' );
+			return;
+		}
+
 		/* Log the webhook */
-		\IPS\Log::log( "MoneyMotion webhook received: {$payload['event']}", 'moneymotion' );
+		\IPS\Log::log( "MoneyMotion webhook received and verified: {$payload['event']} from IP {$clientIp}", 'moneymotion' );
 
 		/* Handle the event */
 		switch ( $payload['event'] )
@@ -106,8 +152,8 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Handle checkout_session:complete event
 	 *
-	 * @param	array	$payload	Webhook payload
-	 * @return	void
+	 * @param array $payload Webhook payload
+	 * @return void
 	 */
 	protected function handleCheckoutComplete( array $payload )
 	{
@@ -179,7 +225,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 				'updated_at'	=> time(),
 			), array( 'session_id=?', $sessionId ) );
 
-			\IPS\Log::log( "MoneyMotion: transaction {$transaction->id} approved for session {$sessionId}", 'moneymotion' );
+			\IPS\Log::log( "MoneyMotion: transaction {$transaction->id} approved for session {$sessionId} - amount: {$session['amount_cents']} cents", 'moneymotion' );
 		}
 		catch ( \Exception $e )
 		{
@@ -190,8 +236,8 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Handle checkout_session:refunded event
 	 *
-	 * @param	array	$payload	Webhook payload
-	 * @return	void
+	 * @param array $payload Webhook payload
+	 * @return void
 	 */
 	protected function handleCheckoutRefunded( array $payload )
 	{
@@ -227,8 +273,8 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Handle failed/expired/disputed checkout events
 	 *
-	 * @param	array	$payload	Webhook payload
-	 * @return	void
+	 * @param array $payload Webhook payload
+	 * @return void
 	 */
 	protected function handleCheckoutFailed( array $payload )
 	{
@@ -246,6 +292,8 @@ class _webhook extends \IPS\Dispatcher\Controller
 				'status'		=> 'failed',
 				'updated_at'	=> time(),
 			), array( 'session_id=?', $sessionId ) );
+
+			\IPS\Log::log( "MoneyMotion: session {$sessionId} marked as failed", 'moneymotion' );
 		}
 		catch ( \Exception $e )
 		{
@@ -256,11 +304,20 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Success return URL handler
 	 *
-	 * @return	void
+	 * @return void
 	 */
 	protected function success()
 	{
 		$transactionId = \IPS\Request::i()->t;
+		$csrf = \IPS\Request::i()->csrf_token;
+
+		/* Validate CSRF token */
+		if ( !$this->validateCsrfToken( $transactionId, $csrf, 'success' ) )
+		{
+			\IPS\Log::log( "MoneyMotion success URL: CSRF token validation failed for transaction {$transactionId}", 'moneymotion' );
+			\IPS\Output::i()->redirect( \IPS\Http\Url::internal( '' ), \IPS\Member::loggedIn()->language()->addToStack( 'moneymotion_payment_failed' ) );
+			return;
+		}
 
 		try
 		{
@@ -278,11 +335,20 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Cancel return URL handler
 	 *
-	 * @return	void
+	 * @return void
 	 */
 	protected function cancel()
 	{
 		$transactionId = \IPS\Request::i()->t;
+		$csrf = \IPS\Request::i()->csrf_token;
+
+		/* Validate CSRF token */
+		if ( !$this->validateCsrfToken( $transactionId, $csrf, 'cancel' ) )
+		{
+			\IPS\Log::log( "MoneyMotion cancel URL: CSRF token validation failed for transaction {$transactionId}", 'moneymotion' );
+			\IPS\Output::i()->redirect( \IPS\Http\Url::internal( '' ), \IPS\Member::loggedIn()->language()->addToStack( 'moneymotion_payment_cancelled' ) );
+			return;
+		}
 
 		try
 		{
@@ -300,11 +366,20 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Failure return URL handler
 	 *
-	 * @return	void
+	 * @return void
 	 */
 	protected function failure()
 	{
 		$transactionId = \IPS\Request::i()->t;
+		$csrf = \IPS\Request::i()->csrf_token;
+
+		/* Validate CSRF token */
+		if ( !$this->validateCsrfToken( $transactionId, $csrf, 'failure' ) )
+		{
+			\IPS\Log::log( "MoneyMotion failure URL: CSRF token validation failed for transaction {$transactionId}", 'moneymotion' );
+			\IPS\Output::i()->redirect( \IPS\Http\Url::internal( '' ), \IPS\Member::loggedIn()->language()->addToStack( 'moneymotion_payment_failed' ) );
+			return;
+		}
 
 		try
 		{
@@ -328,7 +403,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Find the MoneyMotion gateway record
 	 *
-	 * @return	\IPS\nexus\Gateway|NULL
+	 * @return \IPS\nexus\Gateway|NULL
 	 */
 	protected function findGateway()
 	{
@@ -341,5 +416,70 @@ class _webhook extends \IPS\Dispatcher\Controller
 		{
 			return NULL;
 		}
+	}
+
+	/**
+	 * Get client IP address
+	 *
+	 * @return string
+	 */
+	protected function getClientIp()
+	{
+		$ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+		/* Check for proxied IP */
+		if ( !empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) )
+		{
+			$ips = explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] );
+			$ip = trim( $ips[0] );
+		}
+		elseif ( !empty( $_SERVER['HTTP_CLIENT_IP'] ) )
+		{
+			$ip = $_SERVER['HTTP_CLIENT_IP'];
+		}
+
+		return filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : '0.0.0.0';
+	}
+
+	/**
+	 * Generate CSRF token for a transaction
+	 *
+	 * @param int $transactionId Transaction ID
+	 * @param string $action Action (success/cancel/failure)
+	 * @return string
+	 */
+	protected function generateCsrfToken( $transactionId, $action )
+	{
+		$member = \IPS\Member::loggedIn();
+		$data = "{$transactionId}:{$action}:{$member->member_id}:" . \IPS\Settings::i()->cookie_login_key;
+		return hash_hmac( 'sha256', $data, \IPS\Settings::i()->cookie_login_key );
+	}
+
+	/**
+	 * Validate CSRF token
+	 *
+	 * @param int $transactionId Transaction ID
+	 * @param string $token Token to validate
+	 * @param string $action Action (success/cancel/failure)
+	 * @return bool
+	 */
+	protected function validateCsrfToken( $transactionId, $token, $action )
+	{
+		$expectedToken = $this->generateCsrfToken( $transactionId, $action );
+		return hash_equals( $expectedToken, $token );
+	}
+
+	/**
+	 * Verify webhook signature
+	 *
+	 * @param string $rawBody Raw request body
+	 * @param string $signature Signature from request header
+	 * @param string $secret Webhook signing secret
+	 * @return bool
+	 */
+	protected function verifyWebhookSignature( $rawBody, $signature, $secret )
+	{
+		$computed = base64_encode( hash_hmac( 'sha512', $rawBody, $secret, TRUE ) );
+		return hash_equals( $computed, $signature );
 	}
 }
