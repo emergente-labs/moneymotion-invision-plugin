@@ -1,16 +1,16 @@
 <?php
 /**
- * @package		MoneyMotion Payment Gateway
- * @author		MoneyMotion
- * @copyright	(c) 2024 MoneyMotion
+ * @package		moneymotion Payment Gateway
+ * @author		moneymotion
+ * @copyright	(c) 2024 moneymotion
  */
 
 namespace IPS\moneymotion\extensions\nexus\Gateway;
 
 /**
- * MoneyMotion Payment Gateway
+ * moneymotion Payment Gateway
  */
-class _MoneyMotion extends \IPS\nexus\Gateway
+class _moneymotion extends \IPS\nexus\Gateway
 {
 	/* !Payment Gateway */
 
@@ -75,12 +75,12 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	{
 		if ( empty( $settings['api_key'] ) )
 		{
-			throw new \InvalidArgumentException( 'MoneyMotion API key is required.' );
+			throw new \InvalidArgumentException( 'moneymotion API key is required.' );
 		}
 
 		if ( empty( $settings['webhook_secret'] ) )
 		{
-			throw new \InvalidArgumentException( 'MoneyMotion Webhook Secret is required for security.' );
+			throw new \InvalidArgumentException( 'moneymotion Webhook Secret is required for security.' );
 		}
 
 		return $settings;
@@ -123,7 +123,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 		$amount = $transaction->amount;
 
 		/* Audit log: Payment attempt started */
-		\IPS\Log::log( "MoneyMotion: payment attempt started - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, member_id: {$transaction->member->member_id}, amount: {$amount->amount} {$amount->currency}", 'moneymotion' );
+		\IPS\Log::log( "moneymotion: payment attempt started - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, member_id: {$transaction->member->member_id}, amount: {$amount->amount} {$amount->currency}", 'moneymotion' );
 
 		/* Build line items from invoice */
 		$lineItems = array();
@@ -183,11 +183,11 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 				$amount->currency
 			);
 
-			\IPS\Log::log( "MoneyMotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: " . (int) round( $amount->amount * 100 ), 'moneymotion' );
+			\IPS\Log::log( "moneymotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: " . (int) round( $amount->amount * 100 ), 'moneymotion' );
 		}
 		catch ( \Exception $e )
 		{
-			\IPS\Log::log( "MoneyMotion createCheckoutSession failed: " . $e->getMessage() . " | Member: {$transaction->member->member_id} | Invoice: {$invoice->id}", 'moneymotion' );
+			\IPS\Log::log( "moneymotion createCheckoutSession failed: " . $e->getMessage() . " | Member: {$transaction->member->member_id} | Invoice: {$invoice->id}", 'moneymotion' );
 			throw new \LogicException( \IPS\Member::loggedIn()->language()->addToStack( 'moneymotion_error_api' ) );
 		}
 
@@ -207,7 +207,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 		$transaction->gw_id = $sessionId;
 		$transaction->save();
 
-		/* Redirect customer to MoneyMotion checkout */
+		/* Redirect customer to moneymotion checkout */
 		$checkoutUrl = "https://moneymotion.io/checkout/{$sessionId}";
 		\IPS\Output::i()->redirect( \IPS\Http\Url::external( $checkoutUrl ) );
 	}
@@ -221,7 +221,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	 */
 	public function capture( \IPS\nexus\Transaction $transaction )
 	{
-		/* MoneyMotion handles auth + capture in one step via webhook */
+		/* moneymotion handles auth + capture in one step via webhook */
 		/* Nothing to do here - payment is captured automatically */
 	}
 
@@ -239,7 +239,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 			'updated_at'	=> time(),
 		), array( 'transaction_id=?', $transaction->id ) );
 
-		\IPS\Log::log( "MoneyMotion: transaction {$transaction->id} voided by admin", 'moneymotion' );
+		\IPS\Log::log( "moneymotion: transaction {$transaction->id} voided by admin", 'moneymotion' );
 	}
 
 	/* !ACP */
@@ -254,7 +254,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	{
 		if ( $transaction->gw_id )
 		{
-			return "MoneyMotion Session: {$transaction->gw_id}";
+			return "moneymotion Session: {$transaction->gw_id}";
 		}
 		return '';
 	}

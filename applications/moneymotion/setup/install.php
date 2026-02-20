@@ -1,8 +1,8 @@
 <?php
 /**
- * @package		MoneyMotion Payment Gateway
- * @author		MoneyMotion
- * @copyright	(c) 2024 MoneyMotion
+ * @package		moneymotion Payment Gateway
+ * @author		moneymotion
+ * @copyright	(c) 2024 moneymotion
  */
 
 namespace IPS\moneymotion\setup\install;

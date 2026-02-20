@@ -1,19 +1,19 @@
 <?php
 /**
- * @package		MoneyMotion Payment Gateway
- * @author		MoneyMotion
- * @copyright	(c) 2024 MoneyMotion
+ * @package		moneymotion Payment Gateway
+ * @author		moneymotion
+ * @copyright	(c) 2024 moneymotion
  */
 
 namespace IPS\moneymotion\Api;
 
 /**
- * MoneyMotion API Client
+ * moneymotion API Client
  */
 class _Client
 {
 	/**
-	 * @var string MoneyMotion API base URL
+	 * @var string moneymotion API base URL
 	 */
 	const API_BASE_URL = 'https://api.moneymotion.io';
 
@@ -25,7 +25,7 @@ class _Client
 	/**
 	 * Constructor
 	 *
-	 * @param	string	$apiKey		MoneyMotion API key
+	 * @param	string	$apiKey		moneymotion API key
 	 * @return	void
 	 */
 	public function __construct( $apiKey )

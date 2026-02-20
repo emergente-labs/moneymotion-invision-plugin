@@ -1,19 +1,19 @@
 <?php
 
 $lang = array(
-	'__app_moneymotion'					=> "MoneyMotion",
-	'module__moneymotion_gateway'			=> "MoneyMotion Gateway",
+	'__app_moneymotion'					=> "moneymotion",
+	'module__moneymotion_gateway'			=> "moneymotion Gateway",
 
 	// Gateway
-	'gateway__MoneyMotion'				=> "MoneyMotion",
-	'moneymotion_api_key'				=> "MoneyMotion API Key",
-	'moneymotion_api_key_desc'			=> "Enter your MoneyMotion API key (starts with mk_live_ or mk_test_).",
+	'gateway__moneymotion'				=> "moneymotion",
+	'moneymotion_api_key'				=> "moneymotion API Key",
+	'moneymotion_api_key_desc'			=> "Enter your moneymotion API key (starts with mk_live_ or mk_test_).",
 	'moneymotion_webhook_secret'			=> "Webhook Signing Secret",
-	'moneymotion_webhook_secret_desc'		=> "Enter the webhook signing secret from your MoneyMotion dashboard. Used to verify webhook payloads.",
+	'moneymotion_webhook_secret_desc'		=> "Enter the webhook signing secret from your moneymotion dashboard. Used to verify webhook payloads.",
 
 	// Payment screen
-	'moneymotion_pay_button'				=> "Pay with MoneyMotion",
-	'moneymotion_redirect_message'		=> "You will be redirected to MoneyMotion to complete your payment.",
+	'moneymotion_pay_button'				=> "Pay with moneymotion",
+	'moneymotion_redirect_message'		=> "You will be redirected to moneymotion to complete your payment.",
 
 	// Status messages
 	'moneymotion_payment_processing'		=> "Your payment is being processed. You will be redirected shortly.",
@@ -22,10 +22,10 @@ $lang = array(
 	'moneymotion_payment_success'			=> "Payment successful! Your order is being processed.",
 
 	// Errors
-	'moneymotion_error_api'				=> "Could not connect to MoneyMotion. Please try again later.",
+	'moneymotion_error_api'				=> "Could not connect to moneymotion. Please try again later.",
 	'moneymotion_error_invalid_signature'	=> "Invalid webhook signature.",
 	'moneymotion_error_session_not_found'	=> "Checkout session not found.",
 
 	// Admin
-	'moneymotion_settings'				=> "MoneyMotion Settings",
+	'moneymotion_settings'				=> "moneymotion Settings",
 );
