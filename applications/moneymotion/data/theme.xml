@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme name="Default" author_name="MoneyMotion" author_url="https://moneymotion.io">
+ <template template_group="gateway" template_name="paymentScreen" template_data="$gateway, $invoice, $amount" template_location="front" template_app="moneymotion"><![CDATA[<div class="ipsType_center ipsPad">
+	<div class="ipsMessage ipsMessage_info">
+		{lang="moneymotion_payment_instructions"}
+	</div>
+	<br>
+	<a href="{url="app=moneymotion&module=gateway&controller=webhook&do=pay&invoice={$invoice->id}" seoTemplate="moneymotion_pay"}" class="ipsButton ipsButton_primary ipsButton_large" data-action="redirect">
+		{lang="pay_now_with_moneymotion"}
+	</a>
+</div>]]></template>
+</theme>

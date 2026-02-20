@@ -29,9 +29,10 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	/**
 	 * Can store cards?
 	 *
+	 * @param	bool	$adminCreatableOnly	If TRUE, will only return gateways where the admin (opposed to the user) can create a new option
 	 * @return	bool
 	 */
-	public function canStoreCards()
+	public function canStoreCards( $adminCreatableOnly = FALSE )
 	{
 		return FALSE;
 	}
@@ -39,9 +40,10 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	/**
 	 * Admin can manually charge using this gateway?
 	 *
+	 * @param	\IPS\nexus\Customer	$customer	The customer we're wanting to charge
 	 * @return	bool
 	 */
-	public function canAdminCharge()
+	public function canAdminCharge( \IPS\nexus\Customer $customer )
 	{
 		return FALSE;
 	}
@@ -91,7 +93,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	 * @param	string					$type		'auth' or 'pay'
 	 * @return	string
 	 */
-	public function paymentScreen( \IPS\nexus\Invoice $invoice, \IPS\nexus\Money $amount, \IPS\nexus\Customer $member, $recurrings = array(), $type = 'pay' )
+	public function paymentScreen( \IPS\nexus\Invoice $invoice, \IPS\nexus\Money $amount, \IPS\nexus\Customer $member = NULL, $recurrings = array(), $type = 'pay' )
 	{
 		return \IPS\Theme::i()->getTemplate( 'gateway', 'moneymotion', 'front' )->paymentScreen( $this, $invoice, $amount );
 	}
@@ -110,6 +112,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	 */
 	public function auth( \IPS\nexus\Transaction $transaction, $values, \IPS\nexus\Fraud\MaxMind\Request $maxMind = NULL, $recurrings = array(), $source = NULL )
 	{
+		/* Load invoice */
 		$invoice = $transaction->invoice;
 		$settings = json_decode( $this->settings, TRUE );
 		$amount = $transaction->amount;
@@ -121,7 +124,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 			$lineItems[] = array(
 				'name'					=> $item->name,
 				'description'			=> $item->name,
-				'pricePerItemInCents'	=> (int) round( $item->price->amount * 100 ),
+				'pricePerItemInCents'	=> (int) (string) $item->price->amount->multiply( new \IPS\Math\Number( '100' ) ),
 				'quantity'				=> (int) $item->quantity,
 			);
 		}
@@ -132,7 +135,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 			$lineItems[] = array(
 				'name'					=> "Invoice #{$invoice->id}",
 				'description'			=> "Payment for Invoice #{$invoice->id}",
-				'pricePerItemInCents'	=> (int) round( $amount->amount * 100 ),
+				'pricePerItemInCents'	=> (int) (string) $amount->amount->multiply( new \IPS\Math\Number( '100' ) ),
 				'quantity'				=> 1,
 			);
 		}
@@ -140,9 +143,9 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 		/* Build callback URLs */
 		$baseUrl = \IPS\Http\Url::internal( "app=moneymotion&module=gateway&controller=webhook", 'front' );
 		$urls = array(
-			'success'	=> (string) \IPS\Http\Url::internal( "app=moneymotion&module=gateway&controller=webhook&do=success&t={$transaction->id}", 'front' ),
-			'cancel'	=> (string) \IPS\Http\Url::internal( "app=moneymotion&module=gateway&controller=webhook&do=cancel&t={$transaction->id}", 'front' ),
-			'failure'	=> (string) \IPS\Http\Url::internal( "app=moneymotion&module=gateway&controller=webhook&do=failure&t={$transaction->id}", 'front' ),
+			'success'	=> str_replace( 'http://', 'https://', (string) \IPS\Http\Url::internal( "app=moneymotion&module=gateway&controller=webhook&do=success&t={$transaction->id}", 'front' ) ),
+			'cancel'	=> str_replace( 'http://', 'https://', (string) \IPS\Http\Url::internal( "app=moneymotion&module=gateway&controller=webhook&do=cancel&t={$transaction->id}", 'front' ) ),
+			'failure'	=> str_replace( 'http://', 'https://', (string) \IPS\Http\Url::internal( "app=moneymotion&module=gateway&controller=webhook&do=failure&t={$transaction->id}", 'front' ) ),
 		);
 
 		/* Get customer email */
@@ -190,7 +193,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 		$transaction->gw_id = $sessionId;
 		$transaction->save();
 
-		/* Redirect customer to MoneyMotion checkout */
+			/* Redirect customer to MoneyMotion checkout */
 		$checkoutUrl = "https://moneymotion.io/checkout/{$sessionId}";
 		\IPS\Output::i()->redirect( \IPS\Http\Url::external( $checkoutUrl ) );
 	}
@@ -199,11 +202,10 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	 * Capture
 	 *
 	 * @param	\IPS\nexus\Transaction	$transaction	Transaction
-	 * @param	float					$amount			Amount to capture (or NULL for full amount)
 	 * @return	void
 	 * @throws	\LogicException
 	 */
-	public function capture( \IPS\nexus\Transaction $transaction, $amount = NULL )
+	public function capture( \IPS\nexus\Transaction $transaction )
 	{
 		/* MoneyMotion handles auth + capture in one step via webhook */
 		/* Nothing to do here - payment is captured automatically */

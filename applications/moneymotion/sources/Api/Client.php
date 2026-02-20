@@ -48,55 +48,46 @@ class _Client
 	/**
 	 * Create a checkout session
 	 *
-	 * @param	string	$description		Description of the checkout
-	 * @param	array	$urls				Array with 'success', 'cancel', 'failure' URLs
-	 * @param	string	$email				Customer email address
-	 * @param	array	$lineItems			Array of line items, each with 'name', 'description', 'pricePerItemInCents', 'quantity'
-	 * @param	array	$metadata			Optional metadata
-	 * @return	string						Checkout session ID
-	 * @throws	\IPS\Http\Request\Exception
-	 * @throws	\RuntimeException
+	 * @param	string	$description	Description
+	 * @param	array	$urls			URLs (success, cancel, failure)
+	 * @param	string	$email			Customer email
+	 * @param	array	$lineItems		Line items
+	 * @param	array	$metadata		Metadata
+	 * @param	string	$currency		Currency (default: BRL)
+	 * @return	string	Session ID
 	 */
-	public function createCheckoutSession( $description, array $urls, $email, array $lineItems, array $metadata = array(), $currency = 'USD' )
+	public function createCheckoutSession( $description, $urls, $email, $lineItems, $metadata = array(), $currency = 'BRL' )
 	{
 		$body = array(
 			'json' => array(
 				'description'	=> $description,
-				'urls'			=> array(
-					'success'	=> $urls['success'],
-					'cancel'	=> $urls['cancel'],
-					'failure'	=> $urls['failure'],
-				),
-				'userInfo'		=> array(
-					'email'		=> $email,
-				),
+				'urls'			=> $urls,
+				'userInfo'		=> array( 'email' => $email ),
 				'lineItems'		=> $lineItems,
-			),
+			)
 		);
 
-		if ( !empty( $metadata ) )
+		if ( ! empty( $metadata ) )
 		{
-			$body['json']['metadata'] = $metadata;
+			$body['json']['metadata'] = (object) $metadata;
+		}
+		else
+		{
+			$body['json']['metadata'] = (object) array();
 		}
 
-		$extraHeaders = array( 'x-currency' => $currency );
-		$response = $this->request( 'checkoutSessions.createCheckoutSession', $body, 'POST', $extraHeaders );
-
-		if ( isset( $response['result']['data']['json']['checkoutSessionId'] ) )
-		{
-			return $response['result']['data']['json']['checkoutSessionId'];
-		}
-
-		throw new \RuntimeException( 'MoneyMotion API did not return a checkout session ID' );
+		$response = $this->request( 'checkoutSessions.createCheckoutSession', $body, 'POST', array( 'x-currency' => $currency ) );
+		return $response['json']['id'];
 	}
 
 	/**
-	 * Make an API request
+	 * Send request
 	 *
-	 * @param	string	$endpoint	API endpoint (appended to base URL)
-	 * @param	array	$data		Request body data
-	 * @param	string	$method		HTTP method (POST, GET, etc.)
-	 * @return	array				Decoded JSON response
+	 * @param	string	$endpoint		Endpoint
+	 * @param	array	$data			Data
+	 * @param	string	$method			Method
+	 * @param	array	$extraHeaders	Extra headers
+	 * @return	array
 	 * @throws	\IPS\Http\Request\Exception
 	 * @throws	\RuntimeException
 	 */
@@ -107,6 +98,7 @@ class _Client
 		$headers = array(
 			'Content-Type'	=> 'application/json',
 			'X-API-Key'	=> $this->apiKey,
+			'User-Agent'	=> 'MoneyMotion IPS Plugin/3.0.6 (PHP ' . PHP_VERSION . ')',
 		);
 		$headers = array_merge( $headers, $extraHeaders );
 
@@ -128,7 +120,6 @@ class _Client
 		if ( $httpCode < 200 || $httpCode >= 300 )
 		{
 			$errorMessage = isset( $decoded['error'] ) ? ( \is_array( $decoded['error'] ) ? json_encode( $decoded['error'] ) : $decoded['error'] ) : 'Unknown API error';
-			\IPS\Log::log( "MoneyMotion API error ({$httpCode}): {$errorMessage}", 'moneymotion' );
 			throw new \RuntimeException( $errorMessage );
 		}
 
