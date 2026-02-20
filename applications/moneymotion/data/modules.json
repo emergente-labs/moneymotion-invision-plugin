@@ -2,7 +2,7 @@
 	"front": {
 		"gateway": {
 			"default_controller": "webhook",
-			"protected": false
+			"protected": 0
 		}
 	}
 }

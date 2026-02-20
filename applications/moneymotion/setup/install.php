@@ -1,8 +1,8 @@
 <?php
 /**
- * @package		MoneyMotion Payment Gateway
- * @author		MoneyMotion
- * @copyright	(c) 2024 MoneyMotion
+ * @package		moneymotion Payment Gateway
+ * @author		moneymotion
+ * @copyright	(c) 2024 moneymotion
  */
 
 namespace IPS\moneymotion\setup\install;
@@ -80,6 +80,7 @@ function step1()
 			'indexes'	=> array(
 				array(
 					'type'		=> 'primary',
+					'name'		=> 'PRIMARY',
 					'columns'	=> array( 'session_id' ),
 				),
 				array(
@@ -100,6 +101,34 @@ function step1()
 			),
 		) );
 	}
+
+	/* Add MoneyMotion payment method if it doesn't exist */
+	try
+	{
+		$hasMoneyMotion = \IPS\Db::i()->select( 'COUNT(*)', 'nexus_paymethods', array( 'pm_gateway=?', 'MoneyMotion' ) )->first();
+
+		if ( !$hasMoneyMotion )
+		{
+			/* Get max order to append to the end */
+			try
+			{
+				$maxOrder = \IPS\Db::i()->select( 'MAX(pm_order)', 'nexus_paymethods' )->first();
+			}
+			catch ( \UnderflowException $e )
+			{
+				$maxOrder = 0;
+			}
+
+			\IPS\Db::i()->insert( 'nexus_paymethods', array(
+				'pm_name'		=> 'MoneyMotion',
+				'pm_gateway'	=> 'MoneyMotion',
+				'pm_settings'	=> json_encode( array( 'moneymotion_api_key' => '', 'moneymotion_webhook_secret' => '' ) ),
+				'pm_active'		=> 0, // Disabled by default as it needs API key
+				'pm_order'		=> $maxOrder + 1,
+			) );
+		}
+	}
+	catch ( \Exception $e ) {}
 
 	return TRUE;
 }
