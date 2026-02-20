@@ -62,20 +62,6 @@ class _webhook extends \IPS\Dispatcher\Controller
 			}
 		}
 
-		/* Rate limiting: check if IP has sent too many webhooks recently (max 10 per minute) */
-		$clientIp = $this->getClientIp();
-		$rateLimitKey = "moneymotion_webhook_rate_{$clientIp}";
-		$cache = \IPS\Data\Store::i();
-		$attemptCount = (int) $cache->$rateLimitKey;
-
-		if ( $attemptCount >= 10 )
-		{
-			\IPS\Log::log( "moneymotion webhook: rate limit exceeded for IP {$clientIp}", 'moneymotion' );
-			\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Rate limit exceeded' ) ), 429, 'application/json' );
-			return;
-		}
-
-		$cache->setWithExpiration( $rateLimitKey, $attemptCount + 1, \IPS\DateTime::create()->add( new \DateInterval( 'PT1M' ) ) );
 
 		/* Find the gateway to get the webhook secret */
 		$gateway = $this->findGateway();
@@ -408,7 +394,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 	{
 		try
 		{
-			$gatewayRow = \IPS\Db::i()->select( '*', 'nexus_paymethods', array( 'pm_gateway=?', 'moneymotion' ) )->first();
+			$gatewayRow = \IPS\Db::i()->select( '*', 'nexus_paymethods', array( 'm_gateway=?', 'moneymotion' ) )->first();
 			return \IPS\nexus\Gateway::constructFromData( $gatewayRow );
 		}
 		catch ( \Exception $e )

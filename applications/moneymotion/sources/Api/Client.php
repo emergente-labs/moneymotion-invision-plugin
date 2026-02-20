@@ -76,7 +76,7 @@ class _Client
 			$body['json']['metadata'] = (object) array();
 		}
 
-		$response = $this->request( 'checkoutSessions.createCheckoutSession', $body, 'POST', array( 'X-Currency' => $currency ) );
+		$response = $this->request( 'checkoutSessions.createCheckoutSession', $body, 'POST', array( 'x-currency' => $currency ) );
 		return $response['result']['data']['json']['checkoutSessionId'];
 	}
 

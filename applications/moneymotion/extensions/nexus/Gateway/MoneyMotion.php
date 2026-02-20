@@ -122,6 +122,12 @@ class _moneymotion extends \IPS\nexus\Gateway
 		$settings = json_decode( $this->settings, TRUE );
 		$amount = $transaction->amount;
 
+		/* Ensure transaction has an ID before we proceed */
+		if ( ! $transaction->id )
+		{
+			$transaction->save();
+		}
+
 		/* Audit log: Payment attempt started */
 		\IPS\Log::log( "moneymotion: payment attempt started - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, member_id: {$transaction->member->member_id}, amount: {$amount->amount} {$amount->currency}", 'moneymotion' );
 

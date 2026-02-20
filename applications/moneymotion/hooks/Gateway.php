@@ -12,7 +12,7 @@ class moneymotion_hook_Gateway extends _HOOK_CLASS_
     public static function gateways()
     {
         $gateways = parent::gateways();
-        $gateways['MoneyMotion'] = 'IPS\moneymotion\extensions\nexus\Gateway\MoneyMotion';
+        $gateways['moneymotion'] = 'IPS\moneymotion\extensions\nexus\Gateway\moneymotion';
         return $gateways;
     }
 }
