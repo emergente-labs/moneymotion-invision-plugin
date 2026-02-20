@@ -129,10 +129,19 @@ class _moneymotion extends \IPS\nexus\Gateway
 		$lineItems = array();
 		foreach ( $invoice->items as $item )
 		{
+			/* Convert price to cents - handle Math\Number objects properly */
+			$priceInCents = (int) round( (float) (string) $item->price->amount * 100 );
+
+			/* Skip items with 0 price (free items, discounts) */
+			if ( $priceInCents === 0 )
+			{
+				continue;
+			}
+
 			$lineItems[] = array(
 				'name'					=> $item->name,
 				'description'			=> $item->name,
-				'pricePerItemInCents'	=> (int) (string) $item->price->amount->multiply( new \IPS\Math\Number( '100' ) ),
+				'pricePerItemInCents'	=> $priceInCents,
 				'quantity'				=> (int) $item->quantity,
 			);
 		}
@@ -143,7 +152,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 			$lineItems[] = array(
 				'name'					=> "Invoice #{$invoice->id}",
 				'description'			=> "Payment for Invoice #{$invoice->id}",
-				'pricePerItemInCents'	=> (int) (string) $amount->amount->multiply( new \IPS\Math\Number( '100' ) ),
+				'pricePerItemInCents'	=> (int) round( (float) (string) $amount->amount * 100 ),
 				'quantity'				=> 1,
 			);
 		}
@@ -183,7 +192,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 				$amount->currency
 			);
 
-			\IPS\Log::log( "moneymotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: " . (int) round( $amount->amount * 100 ), 'moneymotion' );
+			\IPS\Log::log( "moneymotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: " . (int) round( (float) (string) $amount->amount * 100 ), 'moneymotion' );
 		}
 		catch ( \Exception $e )
 		{
@@ -194,9 +203,9 @@ class _moneymotion extends \IPS\nexus\Gateway
 		/* Store session in database */
 		\IPS\Db::i()->insert( 'moneymotion_sessions', array(
 			'session_id'	=> $sessionId,
-			'transaction_id'	=> $transaction->id,
+			'transaction_id'	=> (int) $transaction->id,
 			'invoice_id'	=> $invoice->id,
-			'amount_cents'	=> (int) round( $amount->amount * 100 ),
+			'amount_cents'	=> (int) round( (float) (string) $amount->amount * 100 ),
 			'currency'		=> $amount->currency,
 			'status'		=> 'pending',
 			'created_at'	=> time(),

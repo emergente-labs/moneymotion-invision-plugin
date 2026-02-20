@@ -76,8 +76,8 @@ class _Client
 			$body['json']['metadata'] = (object) array();
 		}
 
-		$response = $this->request( 'checkoutSessions.createCheckoutSession', $body, 'POST', array( 'x-currency' => $currency ) );
-		return $response['json']['id'];
+		$response = $this->request( 'checkoutSessions.createCheckoutSession', $body, 'POST', array( 'X-Currency' => $currency ) );
+		return $response['result']['data']['json']['checkoutSessionId'];
 	}
 
 	/**
@@ -98,7 +98,7 @@ class _Client
 		$headers = array(
 			'Content-Type'	=> 'application/json',
 			'X-API-Key'	=> $this->apiKey,
-			'User-Agent'	=> 'MoneyMotion IPS Plugin/3.0.6 (PHP ' . PHP_VERSION . ')',
+			'User-Agent'	=> 'moneymotion IPS Plugin/3.0.8 (PHP ' . PHP_VERSION . ')',
 		);
 		$headers = array_merge( $headers, $extraHeaders );
 
