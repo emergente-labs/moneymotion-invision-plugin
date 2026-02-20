@@ -80,6 +80,7 @@ function step1()
 			'indexes'	=> array(
 				array(
 					'type'		=> 'primary',
+					'name'		=> 'PRIMARY',
 					'columns'	=> array( 'session_id' ),
 				),
 				array(

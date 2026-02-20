@@ -1,5 +1,6 @@
 {
 	"moneymotion_sessions": {
+		"name": "moneymotion_sessions",
 		"columns": {
 			"session_id": {
 				"type": "VARCHAR",
