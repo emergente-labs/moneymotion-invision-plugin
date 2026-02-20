@@ -1,14 +1,14 @@
 <?php
 /**
- * @package		MoneyMotion Payment Gateway
- * @author		MoneyMotion
- * @copyright	(c) 2024 MoneyMotion
+ * @package		moneymotion Payment Gateway
+ * @author		moneymotion
+ * @copyright	(c) 2024 moneymotion
  */
 
 namespace IPS\moneymotion\extensions\nexus\Gateway;
 
 /**
- * MoneyMotion Payment Gateway
+ * moneymotion Payment Gateway
  */
 class _MoneyMotion extends \IPS\nexus\Gateway
 {
@@ -73,7 +73,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	{
 		if ( empty( $settings['api_key'] ) )
 		{
-			throw new \InvalidArgumentException( 'MoneyMotion API key is required.' );
+			throw new \InvalidArgumentException( 'moneymotion API key is required.' );
 		}
 
 		return $settings;
@@ -170,7 +170,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 		}
 		catch ( \Exception $e )
 		{
-			\IPS\Log::log( "MoneyMotion createCheckoutSession failed: " . $e->getMessage(), 'moneymotion' );
+			\IPS\Log::log( "moneymotion createCheckoutSession failed: " . $e->getMessage(), 'moneymotion' );
 			throw new \LogicException( \IPS\Member::loggedIn()->language()->addToStack( 'moneymotion_error_api' ) );
 		}
 
@@ -190,7 +190,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 		$transaction->gw_id = $sessionId;
 		$transaction->save();
 
-		/* Redirect customer to MoneyMotion checkout */
+		/* Redirect customer to moneymotion checkout */
 		$checkoutUrl = "https://moneymotion.io/checkout/{$sessionId}";
 		\IPS\Output::i()->redirect( \IPS\Http\Url::external( $checkoutUrl ) );
 	}
@@ -205,7 +205,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	 */
 	public function capture( \IPS\nexus\Transaction $transaction, $amount = NULL )
 	{
-		/* MoneyMotion handles auth + capture in one step via webhook */
+		/* moneymotion handles auth + capture in one step via webhook */
 		/* Nothing to do here - payment is captured automatically */
 	}
 
@@ -236,7 +236,7 @@ class _MoneyMotion extends \IPS\nexus\Gateway
 	{
 		if ( $transaction->gw_id )
 		{
-			return "MoneyMotion Session: {$transaction->gw_id}";
+			return "moneymotion Session: {$transaction->gw_id}";
 		}
 		return '';
 	}

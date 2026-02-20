@@ -1,11 +1,11 @@
 <!-- markdownlint-disable MD033 -->
 <div align="center">
 
-![MoneyMotion Hero](hero.png)
+![moneymotion Hero](hero.png)
 
 <!--
 To get rounded top corners, use this CSS in your markdown renderer:
-img[alt="MoneyMotion Hero"] {
+img[alt="moneymotion Hero"] {
   width: 100%;
   border-top-left-radius: 40px;
   border-top-right-radius: 40px;
@@ -18,10 +18,10 @@ img[alt="MoneyMotion Hero"] {
 </div>
 <!-- markdownlint-enable MD033 -->
 
-<h1 align="center">Invision Community MoneyMotion Plugin</h1>
+<h1 align="center">Invision Community moneymotion Plugin</h1>
 
 <p align="center">
-  Accept payments with <a href="https://moneymotion.io">MoneyMotion</a> on your Invision Community site.<br>
+  Accept payments with <a href="https://moneymotion.io">moneymotion</a> on your Invision Community site.<br>
   Creates checkout sessions, redirects customers to pay, and handles webhooks to complete orders.
 </p>
 
@@ -30,9 +30,9 @@ img[alt="MoneyMotion Hero"] {
 ## How It Works
 
 ```
-Customer clicks Pay -> Plugin creates MoneyMotion checkout session -> Customer pays on MoneyMotion
+Customer clicks Pay -> Plugin creates moneymotion checkout session -> Customer pays on moneymotion
                                                                               |
-Plugin marks order complete <- Webhook received <- MoneyMotion confirms payment
+Plugin marks order complete <- Webhook received <- moneymotion confirms payment
 ```
 
 ## Two Versions Included
@@ -51,7 +51,7 @@ Plugin marks order complete <- Webhook received <- MoneyMotion confirms payment
 ### Requirements
 
 - PHP 8.0+ with `curl`, `pdo_sqlite`, `openssl` extensions
-- MoneyMotion account with API key
+- moneymotion account with API key
 - IPS Community with Commerce and REST API key
 
 ### Quick Start (localhost)
@@ -93,14 +93,14 @@ http://localhost:8000/checkout.php?invoice_id=2&email=customer@example.com
 
 This will:
 1. Fetch the invoice from your IPS community
-2. Create a MoneyMotion checkout session
+2. Create a moneymotion checkout session
 3. Redirect you to `https://moneymotion.io/checkout/{sessionId}`
 
 ### Production Deployment
 
 1. Upload the `standalone/` folder to any PHP hosting with HTTPS
 2. Update `app_url` in `config.php` to your public HTTPS URL
-3. In MoneyMotion dashboard, set webhook URL to:
+3. In moneymotion dashboard, set webhook URL to:
    ```
    https://your-domain.com/standalone/webhook.php
    ```
@@ -111,12 +111,12 @@ This will:
 ```
 standalone/
 ├── config.php              <- Configuration (API keys, URLs)
-├── checkout.php            <- Creates session + redirects to MoneyMotion
+├── checkout.php            <- Creates session + redirects to moneymotion
 ├── webhook.php             <- Receives payment confirmations
 ├── success.php             <- Success return page
 ├── cancel.php              <- Cancel return page
 ├── failure.php             <- Failure return page
-├── MoneyMotionClient.php   <- MoneyMotion API client
+├── MoneyMotionClient.php   <- moneymotion API client
 ├── IPSClient.php           <- IPS REST API client
 ├── Database.php            <- SQLite session tracking
 ├── cacert.pem              <- SSL certificates (for Windows)
@@ -161,14 +161,14 @@ php standalone/tests/test_full_flow.php
 ### Configuration
 
 1. Go to **ACP > Commerce > Payment Methods > Create New**
-2. Select **MoneyMotion** as the gateway
-3. Enter your **MoneyMotion API Key** (starts with `mk_live_` or `mk_test_`)
-4. Enter your **Webhook Signing Secret** (from MoneyMotion dashboard)
+2. Select **moneymotion** as the gateway
+3. Enter your **moneymotion API Key** (starts with `mk_live_` or `mk_test_`)
+4. Enter your **Webhook Signing Secret** (from moneymotion dashboard)
 5. Save
 
 ### Webhook Setup
 
-In your MoneyMotion dashboard:
+In your moneymotion dashboard:
 1. Create a new webhook
 2. Set URL to: `https://your-community.com/moneymotion/webhook/`
 3. Subscribe to: `checkout_session:complete`
@@ -180,7 +180,7 @@ applications/moneymotion/
 ├── Application.php                          <- Main app class
 ├── extensions/nexus/Gateway/MoneyMotion.php <- Payment gateway
 ├── modules/front/gateway/webhook.php       <- Webhook handler
-├── sources/Api/Client.php                  <- MoneyMotion API client
+├── sources/Api/Client.php                  <- moneymotion API client
 ├── dev/lang.php                            <- Language strings
 ├── dev/html/front/gateway/paymentScreen.phtml <- Payment button
 ├── data/schema.json                        <- Database schema
@@ -195,7 +195,7 @@ applications/moneymotion/
 
 ---
 
-## MoneyMotion API Reference
+## moneymotion API Reference
 
 | | |
 |---|---|

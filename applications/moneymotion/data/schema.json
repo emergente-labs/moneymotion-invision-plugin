@@ -6,7 +6,7 @@
 				"length": 255,
 				"allow_null": false,
 				"default": "",
-				"comment": "MoneyMotion checkout session ID"
+				"comment": "moneymotion checkout session ID"
 			},
 			"transaction_id": {
 				"type": "BIGINT",

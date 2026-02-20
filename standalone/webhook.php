@@ -1,8 +1,8 @@
 <?php
 /**
- * MoneyMotion Webhook Handler
+ * moneymotion Webhook Handler
  *
- * Set this URL in your MoneyMotion dashboard:
+ * Set this URL in your moneymotion dashboard:
  *   https://your-domain.com/moneymotionplugin/webhook.php
  *
  * Subscribe to: checkout_session:complete
@@ -50,7 +50,7 @@ if (!empty($webhookSecret)) {
 
     if (!empty($signature)) {
         if (!MoneyMotionClient::verifySignature($rawBody, $signature, $webhookSecret)) {
-            error_log('MoneyMotion webhook: invalid signature');
+            error_log('moneymotion webhook: invalid signature');
             http_response_code(401);
             echo json_encode(array('error' => 'Invalid signature'));
             exit;
@@ -69,7 +69,7 @@ if (!$payload || !isset($payload['event'])) {
 }
 
 $event = $payload['event'];
-error_log("MoneyMotion webhook received: {$event}");
+error_log("moneymotion webhook received: {$event}");
 
 /* ---------- Handle events ---------- */
 
@@ -90,7 +90,7 @@ switch ($event) {
         break;
 
     default:
-        error_log("MoneyMotion webhook: unhandled event '{$event}'");
+        error_log("moneymotion webhook: unhandled event '{$event}'");
         break;
 }
 
@@ -113,7 +113,7 @@ function handleComplete(array $payload, Database $db, array $config)
     $sessionId = isset($checkoutSession['id']) ? $checkoutSession['id'] : '';
 
     if (empty($sessionId)) {
-        error_log('MoneyMotion webhook: complete event missing session ID');
+        error_log('moneymotion webhook: complete event missing session ID');
         return;
     }
 
@@ -131,13 +131,13 @@ function handleComplete(array $payload, Database $db, array $config)
     }
 
     if (!$session) {
-        error_log("MoneyMotion webhook: session not found for {$sessionId}");
+        error_log("moneymotion webhook: session not found for {$sessionId}");
         return;
     }
 
     /* Already processed? */
     if ($session['status'] === 'complete') {
-        error_log("MoneyMotion webhook: session {$sessionId} already complete, skipping");
+        error_log("moneymotion webhook: session {$sessionId} already complete, skipping");
         return;
     }
 
@@ -149,15 +149,15 @@ function handleComplete(array $payload, Database $db, array $config)
         $ips = new IPSClient($config['ips']['base_url'], $config['ips']['api_key']);
         $invoice = $ips->getInvoice($session['invoice_id']);
 
-        error_log("MoneyMotion: payment complete for invoice #{$session['invoice_id']}, session {$sessionId}");
-        error_log("MoneyMotion: invoice status from IPS: " . (isset($invoice['status']) ? $invoice['status'] : 'unknown'));
+        error_log("moneymotion: payment complete for invoice #{$session['invoice_id']}, session {$sessionId}");
+        error_log("moneymotion: invoice status from IPS: " . (isset($invoice['status']) ? $invoice['status'] : 'unknown'));
 
         // The IPS REST API will show the invoice status
         // For full transaction approval, the IPS application version handles this natively
         // With standalone, the admin can verify in ACP that payment was received
 
     } catch (Exception $e) {
-        error_log("MoneyMotion: error checking IPS invoice: " . $e->getMessage());
+        error_log("moneymotion: error checking IPS invoice: " . $e->getMessage());
     }
 }
 
@@ -171,7 +171,7 @@ function handleRefunded(array $payload, Database $db)
 
     if (!empty($sessionId)) {
         $db->updateStatus($sessionId, 'refunded');
-        error_log("MoneyMotion: session {$sessionId} refunded");
+        error_log("moneymotion: session {$sessionId} refunded");
     }
 }
 
@@ -185,6 +185,6 @@ function handleFailed(array $payload, Database $db)
 
     if (!empty($sessionId)) {
         $db->updateStatus($sessionId, 'failed');
-        error_log("MoneyMotion: session {$sessionId} failed/expired/disputed");
+        error_log("moneymotion: session {$sessionId} failed/expired/disputed");
     }
 }

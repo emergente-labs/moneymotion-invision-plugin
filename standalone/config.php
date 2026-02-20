@@ -1,19 +1,19 @@
 <?php
 /**
- * MoneyMotion + Invision Community Standalone Payment Gateway
+ * moneymotion + Invision Community Standalone Payment Gateway
  * Configuration
  */
 
 return array(
     /*
     |--------------------------------------------------------------------------
-    | MoneyMotion Settings
+    | moneymotion Settings
     |--------------------------------------------------------------------------
     */
     'moneymotion' => array(
         'api_key'           => 'mk_live_oJwAu8PI3LCgtdtUSgVyyNWRHYYC8JgV',
         'api_base_url'      => 'https://api.moneymotion.io',
-        'webhook_secret'    => 'eb80a4f9427db425b5e3dcec721197a4053ca9e2688a06536b16253e218ead36',  // Get this from your MoneyMotion dashboard
+        'webhook_secret'    => 'eb80a4f9427db425b5e3dcec721197a4053ca9e2688a06536b16253e218ead36',  // Get this from your moneymotion dashboard
     ),
 
     /*

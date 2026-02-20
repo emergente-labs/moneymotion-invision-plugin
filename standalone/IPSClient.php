@@ -73,7 +73,7 @@ class IPSClient
             CURLOPT_RETURNTRANSFER  => true,
             CURLOPT_HTTPAUTH        => CURLAUTH_BASIC,
             CURLOPT_USERPWD         => $this->apiKey . ':',
-            CURLOPT_USERAGENT       => 'MoneyMotionPlugin/1.0',
+            CURLOPT_USERAGENT       => 'moneymotionPlugin/1.0',
             CURLOPT_TIMEOUT         => 30,
             CURLOPT_CAINFO          => __DIR__ . '/cacert.pem',
         ));

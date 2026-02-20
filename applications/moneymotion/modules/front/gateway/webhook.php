@@ -1,8 +1,8 @@
 <?php
 /**
- * @package		MoneyMotion Payment Gateway
- * @author		MoneyMotion
- * @copyright	(c) 2024 MoneyMotion
+ * @package		moneymotion Payment Gateway
+ * @author		moneymotion
+ * @copyright	(c) 2024 moneymotion
  */
 
 namespace IPS\moneymotion\modules\front\gateway;
@@ -23,7 +23,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 	}
 
 	/**
-	 * Handle MoneyMotion webhook
+	 * Handle moneymotion webhook
 	 *
 	 * @return	void
 	 */
@@ -67,7 +67,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 
 				if ( !empty( $signature ) && !\IPS\moneymotion\Api\Client::verifyWebhookSignature( $rawBody, $signature, $webhookSecret ) )
 				{
-					\IPS\Log::log( "MoneyMotion webhook signature verification failed", 'moneymotion' );
+					\IPS\Log::log( "moneymotion webhook signature verification failed", 'moneymotion' );
 					\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Invalid signature' ) ), 401, 'application/json' );
 					return;
 				}
@@ -75,7 +75,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 		}
 
 		/* Log the webhook */
-		\IPS\Log::log( "MoneyMotion webhook received: {$payload['event']}", 'moneymotion' );
+		\IPS\Log::log( "moneymotion webhook received: {$payload['event']}", 'moneymotion' );
 
 		/* Handle the event */
 		switch ( $payload['event'] )
@@ -95,7 +95,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 
 			default:
 				/* Unknown event - log and acknowledge */
-				\IPS\Log::log( "MoneyMotion webhook: unhandled event '{$payload['event']}'", 'moneymotion' );
+				\IPS\Log::log( "moneymotion webhook: unhandled event '{$payload['event']}'", 'moneymotion' );
 				break;
 		}
 
@@ -116,7 +116,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 
 		if ( empty( $sessionId ) )
 		{
-			\IPS\Log::log( "MoneyMotion webhook: checkout_session:complete missing session ID", 'moneymotion' );
+			\IPS\Log::log( "moneymotion webhook: checkout_session:complete missing session ID", 'moneymotion' );
 			return;
 		}
 
@@ -139,13 +139,13 @@ class _webhook extends \IPS\Dispatcher\Controller
 				}
 				catch ( \UnderflowException $e )
 				{
-					\IPS\Log::log( "MoneyMotion webhook: session not found for ID {$sessionId}", 'moneymotion' );
+					\IPS\Log::log( "moneymotion webhook: session not found for ID {$sessionId}", 'moneymotion' );
 					return;
 				}
 			}
 			else
 			{
-				\IPS\Log::log( "MoneyMotion webhook: session not found for ID {$sessionId}", 'moneymotion' );
+				\IPS\Log::log( "moneymotion webhook: session not found for ID {$sessionId}", 'moneymotion' );
 				return;
 			}
 		}
@@ -153,7 +153,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 		/* Already processed? */
 		if ( $session['status'] === 'complete' )
 		{
-			\IPS\Log::log( "MoneyMotion webhook: session {$sessionId} already complete, skipping", 'moneymotion' );
+			\IPS\Log::log( "moneymotion webhook: session {$sessionId} already complete, skipping", 'moneymotion' );
 			return;
 		}
 
@@ -164,7 +164,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 		}
 		catch ( \OutOfRangeException $e )
 		{
-			\IPS\Log::log( "MoneyMotion webhook: transaction {$session['transaction_id']} not found", 'moneymotion' );
+			\IPS\Log::log( "moneymotion webhook: transaction {$session['transaction_id']} not found", 'moneymotion' );
 			return;
 		}
 
@@ -179,11 +179,11 @@ class _webhook extends \IPS\Dispatcher\Controller
 				'updated_at'	=> time(),
 			), array( 'session_id=?', $sessionId ) );
 
-			\IPS\Log::log( "MoneyMotion: transaction {$transaction->id} approved for session {$sessionId}", 'moneymotion' );
+			\IPS\Log::log( "moneymotion: transaction {$transaction->id} approved for session {$sessionId}", 'moneymotion' );
 		}
 		catch ( \Exception $e )
 		{
-			\IPS\Log::log( "MoneyMotion: failed to approve transaction {$transaction->id}: " . $e->getMessage(), 'moneymotion' );
+			\IPS\Log::log( "moneymotion: failed to approve transaction {$transaction->id}: " . $e->getMessage(), 'moneymotion' );
 		}
 	}
 
@@ -216,11 +216,11 @@ class _webhook extends \IPS\Dispatcher\Controller
 				'updated_at'	=> time(),
 			), array( 'session_id=?', $sessionId ) );
 
-			\IPS\Log::log( "MoneyMotion: transaction {$transaction->id} refunded for session {$sessionId}", 'moneymotion' );
+			\IPS\Log::log( "moneymotion: transaction {$transaction->id} refunded for session {$sessionId}", 'moneymotion' );
 		}
 		catch ( \Exception $e )
 		{
-			\IPS\Log::log( "MoneyMotion refund webhook error: " . $e->getMessage(), 'moneymotion' );
+			\IPS\Log::log( "moneymotion refund webhook error: " . $e->getMessage(), 'moneymotion' );
 		}
 	}
 
@@ -249,7 +249,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 		}
 		catch ( \Exception $e )
 		{
-			\IPS\Log::log( "MoneyMotion failed webhook error: " . $e->getMessage(), 'moneymotion' );
+			\IPS\Log::log( "moneymotion failed webhook error: " . $e->getMessage(), 'moneymotion' );
 		}
 	}
 
@@ -326,7 +326,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 	}
 
 	/**
-	 * Find the MoneyMotion gateway record
+	 * Find the moneymotion gateway record
 	 *
 	 * @return	\IPS\nexus\Gateway|NULL
 	 */
@@ -334,7 +334,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 	{
 		try
 		{
-			$gatewayRow = \IPS\Db::i()->select( '*', 'nexus_paymethods', array( 'pm_gateway=?', 'MoneyMotion' ) )->first();
+			$gatewayRow = \IPS\Db::i()->select( '*', 'nexus_paymethods', array( 'pm_gateway=?', 'moneymotion' ) )->first();
 			return \IPS\nexus\Gateway::constructFromData( $gatewayRow );
 		}
 		catch ( \Exception $e )

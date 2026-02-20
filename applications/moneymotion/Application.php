@@ -1,14 +1,14 @@
 <?php
 /**
- * @package		MoneyMotion Payment Gateway
- * @author		MoneyMotion
- * @copyright	(c) 2024 MoneyMotion
+ * @package		moneymotion Payment Gateway
+ * @author		moneymotion
+ * @copyright	(c) 2024 moneymotion
  */
 
 namespace IPS\moneymotion;
 
 /**
- * MoneyMotion Application Class
+ * moneymotion Application Class
  */
 class _Application extends \IPS\Application
 {

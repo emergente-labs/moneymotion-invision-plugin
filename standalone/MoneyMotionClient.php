@@ -1,6 +1,6 @@
 <?php
 /**
- * MoneyMotion API Client
+ * moneymotion API Client
  */
 class MoneyMotionClient
 {
@@ -51,7 +51,7 @@ class MoneyMotionClient
             return $response['result']['data']['json']['checkoutSessionId'];
         }
 
-        throw new RuntimeException('MoneyMotion did not return a checkout session ID. Response: ' . json_encode($response));
+        throw new RuntimeException('moneymotion did not return a checkout session ID. Response: ' . json_encode($response));
     }
 
     /**
@@ -92,7 +92,7 @@ class MoneyMotionClient
         curl_close($ch);
 
         if ($error) {
-            throw new RuntimeException('MoneyMotion API cURL error: ' . $error);
+            throw new RuntimeException('moneymotion API cURL error: ' . $error);
         }
 
         $decoded = json_decode($response, true);
@@ -102,7 +102,7 @@ class MoneyMotionClient
             if (isset($decoded['error'])) {
                 $msg = is_array($decoded['error']) ? json_encode($decoded['error']) : $decoded['error'];
             }
-            throw new RuntimeException("MoneyMotion API error ({$httpCode}): {$msg}");
+            throw new RuntimeException("moneymotion API error ({$httpCode}): {$msg}");
         }
 
         return $decoded;

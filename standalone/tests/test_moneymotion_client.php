@@ -1,6 +1,6 @@
 <?php
 /**
- * Test: MoneyMotion API Client
+ * Test: moneymotion API Client
  *
  * Run: php tests/test_moneymotion_client.php
  */
@@ -26,7 +26,7 @@ function test($name, $fn) {
 function assert_true($val, $msg = '') { if (!$val) throw new Exception($msg ?: 'Expected true'); }
 function assert_eq($a, $b, $msg = '') { if ($a !== $b) throw new Exception($msg ?: "Expected '{$b}', got '{$a}'"); }
 
-echo "=== MoneyMotion Client Tests ===\n\n";
+echo "=== moneymotion Client Tests ===\n\n";
 
 /* ---- Unit Tests ---- */
 

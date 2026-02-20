@@ -4,7 +4,7 @@
  *
  * Usage: checkout.php?invoice_id=123&email=customer@example.com
  *
- * Creates a MoneyMotion checkout session and redirects the customer to pay.
+ * Creates a moneymotion checkout session and redirects the customer to pay.
  */
 
 require_once __DIR__ . '/MoneyMotionClient.php';
@@ -85,7 +85,7 @@ if ($totalCents <= 0) {
 
 /* ---------- Build URLs ---------- */
 
-/* MoneyMotion requires HTTPS URLs. Use IPS community URL for return redirects */
+/* moneymotion requires HTTPS URLs. Use IPS community URL for return redirects */
 $ipsUrl = rtrim($config['ips']['base_url'], '/');
 $invoiceViewUrl = isset($invoice['viewUrl']) ? $invoice['viewUrl'] : $ipsUrl;
 $urls = array(
@@ -136,10 +136,10 @@ try {
     ));
 } catch (Exception $e) {
     // Log but don't block - the session was already created
-    error_log('MoneyMotion DB error: ' . $e->getMessage());
+    error_log('moneymotion DB error: ' . $e->getMessage());
 }
 
-/* ---------- Redirect to MoneyMotion checkout ---------- */
+/* ---------- Redirect to moneymotion checkout ---------- */
 
 $checkoutUrl = "https://moneymotion.io/checkout/{$sessionId}";
 header("Location: {$checkoutUrl}");
