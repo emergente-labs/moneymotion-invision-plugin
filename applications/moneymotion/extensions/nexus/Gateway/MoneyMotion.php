@@ -139,17 +139,10 @@ class _moneymotion extends \IPS\nexus\Gateway
 			/* Convert price to cents - handle Math\Number objects properly */
 			$priceInCents = (int) round( (float) (string) $item->price->amount * 100 );
 
-			/* Skip items with 0 price (free items) */
+			/* Skip items with 0 price (free items, discounts) */
 			if ( $priceInCents === 0 )
 			{
 				continue;
-			}
-
-			/* If we have a negative price (discount), mark it so we can fallback to single line item */
-			if ( $priceInCents < 0 )
-			{
-				$hasNonPositiveItem = TRUE;
-				break;
 			}
 
 			$lineItems[] = array(
@@ -163,13 +156,11 @@ class _moneymotion extends \IPS\nexus\Gateway
 		/* If we have discounts or no line items, create a single item for the total */
 		if ( $hasNonPositiveItem || empty( $lineItems ) )
 		{
-			$lineItems = array(
-				array(
-					'name'					=> "Invoice #{$invoice->id}",
-					'description'			=> "Payment for Invoice #{$invoice->id}",
-					'pricePerItemInCents'	=> (int) round( (float) (string) $amount->amount * 100 ),
-					'quantity'				=> 1,
-				)
+			$lineItems[] = array(
+				'name'					=> "Invoice #{$invoice->id}",
+				'description'			=> "Payment for Invoice #{$invoice->id}",
+				'pricePerItemInCents'	=> (int) round( (float) (string) $amount->amount * 100 ),
+				'quantity'				=> 1,
 			);
 		}
 
