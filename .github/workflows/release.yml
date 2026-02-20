@@ -1,32 +1,62 @@
-name: Build and Release
+name: Build & Release
 
 on:
+  workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+
+permissions:
+  contents: write
 
 jobs:
   release:
+    name: Build & Publish
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for version change
+        id: version
+        run: |
+          VERSION_FILE="./applications/moneymotion/data/application.json"
+          NEW=$(node -p "require('$VERSION_FILE').app_version")
+          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$NEW" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch, publishing v$NEW"
+          else
+            # Get version from previous commit
+            OLD=$(git show HEAD~1:$VERSION_FILE 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).app_version" 2>/dev/null || echo "")
+            
+            if [ "$NEW" != "$OLD" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "version=$NEW" >> "$GITHUB_OUTPUT"
+              echo "Version changed: $OLD -> $NEW"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "Version unchanged ($NEW), skipping release"
+            fi
+          fi
 
       - name: Setup PHP
+        if: steps.version.outputs.changed == 'true'
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
 
       - name: Build tar
+        if: steps.version.outputs.changed == 'true'
         run: php build_tar.php
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: moneymotion.tar
-          generate_release_notes: true
+      - name: Create GitHub Release
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            moneymotion.tar \
+            --title "Release v${{ steps.version.outputs.version }}" \
+            --generate-notes
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ github.token }}
