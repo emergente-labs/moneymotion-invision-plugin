@@ -133,6 +133,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 
 		/* Build line items from invoice */
 		$lineItems = array();
+		$hasNonPositiveItem = FALSE;
 		foreach ( $invoice->items as $item )
 		{
 			/* Convert price to cents - handle Math\Number objects properly */
@@ -152,8 +153,8 @@ class _moneymotion extends \IPS\nexus\Gateway
 			);
 		}
 
-		/* If no line items from invoice, create a single item for the total */
-		if ( empty( $lineItems ) )
+		/* If we have discounts or no line items, create a single item for the total */
+		if ( $hasNonPositiveItem || empty( $lineItems ) )
 		{
 			$lineItems[] = array(
 				'name'					=> "Invoice #{$invoice->id}",
