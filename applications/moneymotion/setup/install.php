@@ -105,27 +105,29 @@ function step1()
 	/* Add MoneyMotion payment method if it doesn't exist */
 	try
 	{
-		$hasMoneyMotion = \IPS\Db::i()->select( 'COUNT(*)', 'nexus_paymethods', array( 'pm_gateway=?', 'MoneyMotion' ) )->first();
+		$hasMoneyMotion = \IPS\Db::i()->select( 'COUNT(*)', 'nexus_paymethods', array( 'm_gateway=?', 'moneymotion' ) )->first();
 
 		if ( !$hasMoneyMotion )
 		{
-			/* Get max order to append to the end */
+			/* Get max position to append to the end */
 			try
 			{
-				$maxOrder = \IPS\Db::i()->select( 'MAX(pm_order)', 'nexus_paymethods' )->first();
+				$maxPosition = \IPS\Db::i()->select( 'MAX(m_position)', 'nexus_paymethods' )->first();
 			}
 			catch ( \UnderflowException $e )
 			{
-				$maxOrder = 0;
+				$maxPosition = 0;
 			}
 
-			\IPS\Db::i()->insert( 'nexus_paymethods', array(
-				'pm_name'		=> 'MoneyMotion',
-				'pm_gateway'	=> 'MoneyMotion',
-				'pm_settings'	=> json_encode( array( 'moneymotion_api_key' => '', 'moneymotion_webhook_secret' => '' ) ),
-				'pm_active'		=> 0, // Disabled by default as it needs API key
-				'pm_order'		=> $maxOrder + 1,
+			$insertId = \IPS\Db::i()->insert( 'nexus_paymethods', array(
+				'm_gateway'		=> 'moneymotion',
+				'm_settings'	=> json_encode( array( 'api_key' => '', 'webhook_secret' => '' ) ),
+				'm_active'		=> 0,
+				'm_position'	=> $maxPosition + 1,
 			) );
+
+			/* Store the display name via IPS language system */
+			\IPS\Lang::saveCustom( 'nexus', "nexus_paymethod_{$insertId}", 'MoneyMotion' );
 		}
 	}
 	catch ( \Exception $e ) {}
