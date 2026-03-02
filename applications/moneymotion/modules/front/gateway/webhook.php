@@ -91,6 +91,8 @@ class _webhook extends \IPS\Dispatcher\Controller
 			$signature = isset( $_SERVER['HTTP_X_SIGNATURE'] ) ? $_SERVER['HTTP_X_SIGNATURE'] : '';
 		}
 
+		$clientIp = $this->getClientIp();
+
 		if ( empty( $signature ) )
 		{
 			\IPS\Log::log( "moneymotion webhook: signature missing from request headers for IP {$clientIp}", 'moneymotion' );
