@@ -1,0 +1,104 @@
+name: PR Test Release
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-release-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build-pr-release:
+    name: Build PR package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+
+      - name: Build tar
+        run: php build_tar.php
+
+      - name: Read app version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./applications/moneymotion/data/application.json').app_version")
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TAG="pr-${{ github.event.pull_request.number }}-v${VERSION}"
+          TITLE="PR #${{ github.event.pull_request.number }} Test Build v${VERSION} (${SHORT_SHA})"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moneymotion-pr-${{ github.event.pull_request.number }}-v${{ steps.version.outputs.version }}
+          path: moneymotion.tar
+          if-no-files-found: error
+
+      - name: Create or update PR pre-release
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="Automated PR test release for #${{ github.event.pull_request.number }}\n\nCommit: ${GITHUB_SHA}\nBranch: ${{ github.head_ref }}"
+
+          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            gh release upload "${{ steps.version.outputs.tag }}" moneymotion.tar --clobber
+            gh release edit "${{ steps.version.outputs.tag }}" --title "${{ steps.version.outputs.title }}" --notes "$NOTES" --prerelease
+          else
+            gh release create "${{ steps.version.outputs.tag }}" moneymotion.tar --title "${{ steps.version.outputs.title }}" --notes "$NOTES" --prerelease
+          fi
+
+      - name: Comment PR with download links
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        with:
+          script: |
+            const marker = '<!-- moneymotion-pr-release -->';
+            const body = `${marker}
+            ✅ PR test package is ready.
+
+            - **GitHub Release:** https://github.com/${context.repo.owner}/${context.repo.repo}/releases/tag/${process.env.RELEASE_TAG}
+            - **Workflow Artifact:** Available in this run under "Artifacts"
+
+            This package is rebuilt on each PR update, so testers can validate before merge.`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language>
+	<app key="moneymotion" version="30012">
+		<word key="__app_moneymotion" js="0">moneymotion</word>
+		<word key="module__moneymotion_gateway" js="0">moneymotion Gateway</word>
+		<word key="gateway__moneymotion" js="0">moneymotion</word>
+		<word key="moneymotion_api_key" js="0">moneymotion API Key</word>
+		<word key="moneymotion_api_key_desc" js="0">Enter your moneymotion API key (starts with mk_live_ or mk_test_).</word>
+		<word key="moneymotion_webhook_secret" js="0">Webhook Signing Secret</word>
+		<word key="moneymotion_webhook_secret_desc" js="0">Enter the webhook signing secret from your moneymotion dashboard. Used to verify webhook payloads.</word>
+		<word key="moneymotion_pay_button" js="0">Pay with moneymotion</word>
+		<word key="moneymotion_redirect_message" js="0">You will be redirected to moneymotion to complete your payment.</word>
+		<word key="moneymotion_payment_processing" js="0">Your payment is being processed. You will be redirected shortly.</word>
+		<word key="moneymotion_payment_cancelled" js="0">Payment was cancelled. Please try again.</word>
+		<word key="moneymotion_payment_failed" js="0">Payment failed. Please try again or use a different payment method.</word>
+		<word key="moneymotion_payment_success" js="0">Payment successful! Your order is being processed.</word>
+		<word key="moneymotion_error_api" js="0">Could not connect to moneymotion. Please try again later.</word>
+		<word key="moneymotion_error_invalid_signature" js="0">Invalid webhook signature.</word>
+		<word key="moneymotion_error_session_not_found" js="0">Checkout session not found.</word>
+		<word key="moneymotion_settings" js="0">moneymotion Settings</word>
+	</app>
+</language>

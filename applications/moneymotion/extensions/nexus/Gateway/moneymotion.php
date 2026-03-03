@@ -98,7 +98,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 	 * @param string $type 'auth' or 'pay'
 	 * @return string
 	 */
-	public function paymentScreen( \IPS\nexus\Invoice $invoice, \IPS\nexus\Money $amount, \IPS\nexus\Customer $member = NULL, $recurrings = array(), $type = 'pay' )
+	public function paymentScreen( \IPS\nexus\Invoice $invoice, \IPS\nexus\Money $amount, \IPS\nexus\Customer $member = NULL, $recurrings = array(), $type = 'checkout' )
 	{
 		return \IPS\Theme::i()->getTemplate( 'gateway', 'moneymotion', 'front' )->paymentScreen( $this, $invoice, $amount );
 	}
@@ -139,9 +139,10 @@ class _moneymotion extends \IPS\nexus\Gateway
 			/* Convert price to cents - handle Math\Number objects properly */
 			$priceInCents = (int) round( (float) (string) $item->price->amount * 100 );
 
-			/* Skip items with 0 price (free items, discounts) */
-			if ( $priceInCents === 0 )
+			/* Skip non-positive values; fallback total item will be used */
+			if ( $priceInCents <= 0 )
 			{
+				$hasNonPositiveItem = TRUE;
 				continue;
 			}
 

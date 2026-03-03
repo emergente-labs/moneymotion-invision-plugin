@@ -42,6 +42,12 @@ class _Client
 	public static function fromGateway( \IPS\nexus\Gateway $gateway )
 	{
 		$settings = json_decode( $gateway->settings, TRUE );
+
+		if ( !\is_array( $settings ) || empty( $settings['api_key'] ) )
+		{
+			throw new \InvalidArgumentException( 'moneymotion API key is not configured.' );
+		}
+
 		return new static( $settings['api_key'] );
 	}
 
@@ -98,7 +104,7 @@ class _Client
 		$headers = array(
 			'Content-Type'	=> 'application/json',
 			'X-API-Key'	=> $this->apiKey,
-			'User-Agent'	=> 'moneymotion IPS Plugin/3.0.8 (PHP ' . PHP_VERSION . ')',
+			'User-Agent'	=> 'moneymotion IPS Plugin/3.0.12 (PHP ' . PHP_VERSION . ')',
 		);
 		$headers = array_merge( $headers, $extraHeaders );
 
@@ -107,7 +113,14 @@ class _Client
 
 		if ( $method === 'POST' )
 		{
-			$response = $request->post( json_encode( $data ) );
+			$payload = json_encode( $data );
+
+			if ( $payload === FALSE )
+			{
+				throw new \RuntimeException( 'Unable to encode request payload.' );
+			}
+
+			$response = $request->post( $payload );
 		}
 		else
 		{
@@ -116,6 +129,11 @@ class _Client
 
 		$httpCode = $response->httpResponseCode;
 		$decoded = json_decode( $response->content, TRUE );
+
+		if ( !\is_array( $decoded ) )
+		{
+			throw new \RuntimeException( 'Invalid JSON response from moneymotion API.' );
+		}
 
 		if ( $httpCode < 200 || $httpCode >= 300 )
 		{

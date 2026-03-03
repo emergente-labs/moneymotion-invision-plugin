@@ -50,7 +50,13 @@ class _webhook extends \IPS\Dispatcher\Controller
 		}
 
 		/* Validate timestamp to prevent replay attacks (5 minute window) */
-		$timestamp = isset( $payload['timestamp'] ) ? $payload['timestamp'] : 0;
+		$timestamp = isset( $payload['timestamp'] ) ? (int) $payload['timestamp'] : 0;
+
+		if ( $timestamp > 2000000000 )
+		{
+			$timestamp = (int) floor( $timestamp / 1000 );
+		}
+
 		if ( $timestamp )
 		{
 			$currentTime = time();
@@ -80,15 +86,16 @@ class _webhook extends \IPS\Dispatcher\Controller
 		if ( empty( $webhookSecret ) )
 		{
 			\IPS\Log::log( "moneymotion webhook: webhook secret not configured in gateway settings - SECURITY RISK", 'moneymotion' );
+			\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Webhook secret not configured' ) ), 500, 'application/json' );
 			return;
 		}
 
 		/* Verify signature */
-		$signature = isset( $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] ) ? $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] : '';
+		$signature = isset( $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] ) ? trim( (string) $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] ) : '';
 
 		if ( empty( $signature ) )
 		{
-			$signature = isset( $_SERVER['HTTP_X_SIGNATURE'] ) ? $_SERVER['HTTP_X_SIGNATURE'] : '';
+			$signature = isset( $_SERVER['HTTP_X_SIGNATURE'] ) ? trim( (string) $_SERVER['HTTP_X_SIGNATURE'] ) : '';
 		}
 
 		$clientIp = $this->getClientIp();
@@ -452,8 +459,13 @@ class _webhook extends \IPS\Dispatcher\Controller
 	 */
 	protected function validateCsrfToken( $transactionId, $token, $action )
 	{
+		if ( !\is_scalar( $token ) || $token === '' )
+		{
+			return FALSE;
+		}
+
 		$expectedToken = $this->generateCsrfToken( $transactionId, $action );
-		return hash_equals( $expectedToken, $token );
+		return hash_equals( $expectedToken, (string) $token );
 	}
 
 	/**
@@ -467,6 +479,6 @@ class _webhook extends \IPS\Dispatcher\Controller
 	protected function verifyWebhookSignature( $rawBody, $signature, $secret )
 	{
 		$computed = base64_encode( hash_hmac( 'sha512', $rawBody, $secret, TRUE ) );
-		return hash_equals( $computed, $signature );
+		return hash_equals( $computed, (string) $signature );
 	}
 }
