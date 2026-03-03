@@ -102,35 +102,5 @@ function step1()
 		) );
 	}
 
-	/* Add MoneyMotion payment method if it doesn't exist */
-	try
-	{
-		$hasMoneyMotion = \IPS\Db::i()->select( 'COUNT(*)', 'nexus_paymethods', array( 'm_gateway=?', 'moneymotion' ) )->first();
-
-		if ( !$hasMoneyMotion )
-		{
-			/* Get max position to append to the end */
-			try
-			{
-				$maxPosition = \IPS\Db::i()->select( 'MAX(m_position)', 'nexus_paymethods' )->first();
-			}
-			catch ( \UnderflowException $e )
-			{
-				$maxPosition = 0;
-			}
-
-			$insertId = \IPS\Db::i()->insert( 'nexus_paymethods', array(
-				'm_gateway'		=> 'moneymotion',
-				'm_settings'	=> json_encode( array( 'api_key' => '', 'webhook_secret' => '' ) ),
-				'm_active'		=> 0,
-				'm_position'	=> $maxPosition + 1,
-			) );
-
-			/* Store the display name via IPS language system */
-			\IPS\Lang::saveCustom( 'nexus', "nexus_paymethod_{$insertId}", 'MoneyMotion' );
-		}
-	}
-	catch ( \Exception $e ) {}
-
 	return TRUE;
 }
