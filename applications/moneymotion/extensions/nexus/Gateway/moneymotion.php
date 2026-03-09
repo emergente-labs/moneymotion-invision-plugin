@@ -120,7 +120,6 @@ class _moneymotion extends \IPS\nexus\Gateway
 		/* Load invoice */
 		$invoice = $transaction->invoice;
 		$settings = json_decode( $this->settings, TRUE );
-		$amount = $transaction->amount;
 
 		/* Ensure transaction has an ID before we proceed */
 		if ( ! $transaction->id )
@@ -128,42 +127,45 @@ class _moneymotion extends \IPS\nexus\Gateway
 			$transaction->save();
 		}
 
+		/* Always charge the current invoice amount to guarantee coupon discounts are reflected */
+		$amount = $transaction->amount;
+		try
+		{
+			$invoice->recalculateTotal();
+			$invoiceAmountToPay = $invoice->amountToPay( TRUE );
+
+			if ( $invoiceAmountToPay->currency === $amount->currency && $invoiceAmountToPay->amount->isPositive() )
+			{
+				if ( $amount->amount->compare( $invoiceAmountToPay->amount ) !== 0 )
+				{
+					\IPS\Log::log( "moneymotion: amount mismatch detected, syncing transaction amount - transaction_id: {$transaction->id}, old_amount: {$amount->amount}, new_amount: {$invoiceAmountToPay->amount}", 'moneymotion' );
+					$transaction->amount = $invoiceAmountToPay;
+					$transaction->save();
+				}
+
+				$amount = $invoiceAmountToPay;
+			}
+		}
+		catch ( \Throwable $e )
+		{
+			\IPS\Log::log( "moneymotion: failed to recalculate invoice amount, using transaction amount - transaction_id: {$transaction->id}, error: {$e->getMessage()}", 'moneymotion' );
+		}
+
 		/* Audit log: Payment attempt started */
 		\IPS\Log::log( "moneymotion: payment attempt started - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, member_id: {$transaction->member->member_id}, amount: {$amount->amount} {$amount->currency}", 'moneymotion' );
 
-		/* Build line items from invoice */
-		$lineItems = array();
-		$hasNonPositiveItem = FALSE;
-		foreach ( $invoice->items as $item )
-		{
-			/* Convert price to cents - handle Math\Number objects properly */
-			$priceInCents = (int) round( (float) (string) $item->price->amount * 100 );
-
-			/* Skip non-positive values; fallback total item will be used */
-			if ( $priceInCents <= 0 )
-			{
-				$hasNonPositiveItem = TRUE;
-				continue;
-			}
-
-			$lineItems[] = array(
-				'name'					=> $item->name,
-				'description'			=> $item->name,
-				'pricePerItemInCents'	=> $priceInCents,
-				'quantity'				=> (int) $item->quantity,
-			);
-		}
-
-		/* If we have discounts or no line items, create a single item for the total */
-		if ( $hasNonPositiveItem || empty( $lineItems ) )
-		{
-			$lineItems[] = array(
-				'name'					=> "Invoice #{$invoice->id}",
+		/* Build a single line item using the already-discounted transaction total.
+		   IPS computes $transaction->amount after applying coupons, renewal discounts,
+		   and taxes — matching how Stripe and other IPS gateways handle it. */
+		$totalCents = (int) round( (float) (string) $amount->amount * 100 );
+		$lineItems = array(
+			array(
+				'name'					=> $invoice->title ?: "Invoice #{$invoice->id}",
 				'description'			=> "Payment for Invoice #{$invoice->id}",
-				'pricePerItemInCents'	=> (int) round( (float) (string) $amount->amount * 100 ),
+				'pricePerItemInCents'	=> $totalCents,
 				'quantity'				=> 1,
-			);
-		}
+			),
+		);
 
 		/* Build callback URLs with CSRF tokens */
 		$csrfTokenSuccess = $this->generateCsrfToken( $transaction->id, 'success' );
