@@ -112,7 +112,7 @@ class _Client
 		$headers = array(
 			'Content-Type'	=> 'application/json',
 			'x-api-key'	=> $apiKey,
-			'User-Agent'	=> 'moneymotion IPS Plugin/3.0.15 (PHP ' . PHP_VERSION . ')',
+			'User-Agent'	=> 'moneymotion IPS Plugin/3.0.16 (PHP ' . PHP_VERSION . ')',
 		);
 		$headers = array_merge( $headers, $extraHeaders );
 
