@@ -349,6 +349,19 @@ class _webhook extends \IPS\Dispatcher\Controller
 			$transaction = \IPS\nexus\Transaction::load( $transactionId );
 			$invoice = $transaction->invoice;
 
+			/* Mark as refused so the pending entry doesn't accumulate */
+			if ( $transaction->status === $transaction::STATUS_PENDING )
+			{
+				$transaction->status = $transaction::STATUS_REFUSED;
+				$transaction->save();
+			}
+
+			/* Mark the session as cancelled */
+			\IPS\Db::i()->update( 'moneymotion_sessions', array(
+				'status'		=> 'cancelled',
+				'updated_at'	=> time(),
+			), array( 'transaction_id=?', $transactionId ) );
+
 			\IPS\Output::i()->redirect( $invoice->checkoutUrl(), \IPS\Member::loggedIn()->language()->addToStack( 'moneymotion_payment_cancelled' ) );
 		}
 		catch ( \OutOfRangeException $e )
@@ -379,6 +392,13 @@ class _webhook extends \IPS\Dispatcher\Controller
 		{
 			$transaction = \IPS\nexus\Transaction::load( $transactionId );
 			$invoice = $transaction->invoice;
+
+			/* Mark as refused so the pending entry doesn't accumulate */
+			if ( $transaction->status === $transaction::STATUS_PENDING )
+			{
+				$transaction->status = $transaction::STATUS_REFUSED;
+				$transaction->save();
+			}
 
 			/* Update session status */
 			\IPS\Db::i()->update( 'moneymotion_sessions', array(

@@ -30,7 +30,7 @@ class _Client
 	 */
 	public function __construct( $apiKey )
 	{
-		$this->apiKey = $apiKey;
+		$this->apiKey = trim( (string) $apiKey );
 	}
 
 	/**
@@ -43,12 +43,14 @@ class _Client
 	{
 		$settings = json_decode( $gateway->settings, TRUE );
 
-		if ( !\is_array( $settings ) || empty( $settings['api_key'] ) )
+		$apiKey = ( \is_array( $settings ) && isset( $settings['api_key'] ) ) ? trim( (string) $settings['api_key'] ) : '';
+
+		if ( $apiKey === '' )
 		{
 			throw new \InvalidArgumentException( 'moneymotion API key is not configured.' );
 		}
 
-		return new static( $settings['api_key'] );
+		return new static( $apiKey );
 	}
 
 	/**
@@ -100,10 +102,16 @@ class _Client
 	protected function request( $endpoint, array $data = array(), $method = 'POST', array $extraHeaders = array() )
 	{
 		$url = \IPS\Http\Url::external( static::API_BASE_URL . '/' . $endpoint );
+		$apiKey = trim( (string) $this->apiKey );
+
+		if ( $apiKey === '' )
+		{
+			throw new \RuntimeException( 'moneymotion API key is empty.' );
+		}
 
 		$headers = array(
 			'Content-Type'	=> 'application/json',
-			'X-API-Key'	=> $this->apiKey,
+			'x-api-key'	=> $apiKey,
 			'User-Agent'	=> 'moneymotion IPS Plugin/3.0.15 (PHP ' . PHP_VERSION . ')',
 		);
 		$headers = array_merge( $headers, $extraHeaders );
