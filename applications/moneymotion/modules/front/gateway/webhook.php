@@ -167,27 +167,8 @@ class _webhook extends \IPS\Dispatcher\Controller
 		}
 		catch ( \UnderflowException $e )
 		{
-			/* Try finding by metadata */
-			$metadata = isset( $checkoutSession['metadata'] ) ? $checkoutSession['metadata'] : array();
-			$transactionId = isset( $metadata['transaction_id'] ) ? $metadata['transaction_id'] : 0;
-
-			if ( $transactionId )
-			{
-				try
-				{
-					$session = \IPS\Db::i()->select( '*', 'moneymotion_sessions', array( 'transaction_id=?', $transactionId ) )->first();
-				}
-				catch ( \UnderflowException $e )
-				{
-					\IPS\Log::log( "moneymotion webhook: session not found for ID {$sessionId}", 'moneymotion' );
-					return;
-				}
-			}
-			else
-			{
-				\IPS\Log::log( "moneymotion webhook: session not found for ID {$sessionId}", 'moneymotion' );
-				return;
-			}
+			\IPS\Log::log( "moneymotion webhook: session not found for ID {$sessionId}", 'moneymotion' );
+			return;
 		}
 
 		/* Already processed? */
@@ -205,6 +186,34 @@ class _webhook extends \IPS\Dispatcher\Controller
 		catch ( \OutOfRangeException $e )
 		{
 			\IPS\Log::log( "moneymotion webhook: transaction {$session['transaction_id']} not found", 'moneymotion' );
+			return;
+		}
+
+		/* Validate paid amount/currency before approving */
+		$paidAmountCents = $this->extractPaidAmountCents( $checkoutSession );
+		$paidCurrency = $this->extractPaidCurrency( $checkoutSession );
+
+		if ( $paidAmountCents === NULL || $paidCurrency === NULL )
+		{
+			\IPS\Log::log( "moneymotion webhook: missing paid amount/currency for session {$sessionId}; approval blocked", 'moneymotion' );
+			\IPS\Db::i()->update( 'moneymotion_sessions', array(
+				'status' => 'failed',
+				'updated_at' => time(),
+			), array( 'session_id=?', $sessionId ) );
+			return;
+		}
+
+		$expectedAmountCents = (int) $session['amount_cents'];
+		$expectedCurrency = mb_strtoupper( (string) $session['currency'] );
+		$paidCurrency = mb_strtoupper( (string) $paidCurrency );
+
+		if ( $paidAmountCents !== $expectedAmountCents || $paidCurrency !== $expectedCurrency )
+		{
+			\IPS\Log::log( "moneymotion webhook: amount/currency mismatch for session {$sessionId}; expected {$expectedAmountCents} {$expectedCurrency}, got {$paidAmountCents} {$paidCurrency}; approval blocked", 'moneymotion' );
+			\IPS\Db::i()->update( 'moneymotion_sessions', array(
+				'status' => 'failed',
+				'updated_at' => time(),
+			), array( 'session_id=?', $sessionId ) );
 			return;
 		}
 
@@ -500,5 +509,65 @@ class _webhook extends \IPS\Dispatcher\Controller
 	{
 		$computed = base64_encode( hash_hmac( 'sha512', $rawBody, $secret, TRUE ) );
 		return hash_equals( $computed, (string) $signature );
+	}
+
+	/**
+	 * Extract paid amount in cents from checkout session payload
+	 *
+	 * @param array $checkoutSession Checkout session payload
+	 * @return int|NULL
+	 */
+	protected function extractPaidAmountCents( array $checkoutSession )
+	{
+		foreach ( array( 'amountInCents', 'amount_cents', 'amountCents', 'totalAmountInCents', 'total_amount_cents' ) as $key )
+		{
+			if ( isset( $checkoutSession[ $key ] ) && is_numeric( $checkoutSession[ $key ] ) )
+			{
+				return (int) $checkoutSession[ $key ];
+			}
+		}
+
+		if ( isset( $checkoutSession['lineItems'] ) && is_array( $checkoutSession['lineItems'] ) )
+		{
+			$total = 0;
+			$hasAny = FALSE;
+			foreach ( $checkoutSession['lineItems'] as $item )
+			{
+				if ( !is_array( $item ) || !isset( $item['pricePerItemInCents'] ) || !is_numeric( $item['pricePerItemInCents'] ) )
+				{
+					continue;
+				}
+
+				$quantity = ( isset( $item['quantity'] ) && is_numeric( $item['quantity'] ) ) ? (int) $item['quantity'] : 1;
+				$total += ( (int) $item['pricePerItemInCents'] ) * max( 1, $quantity );
+				$hasAny = TRUE;
+			}
+
+			if ( $hasAny )
+			{
+				return $total;
+			}
+		}
+
+		return NULL;
+	}
+
+	/**
+	 * Extract paid currency from checkout session payload
+	 *
+	 * @param array $checkoutSession Checkout session payload
+	 * @return string|NULL
+	 */
+	protected function extractPaidCurrency( array $checkoutSession )
+	{
+		foreach ( array( 'currency', 'currencyCode', 'currency_code' ) as $key )
+		{
+			if ( isset( $checkoutSession[ $key ] ) && is_scalar( $checkoutSession[ $key ] ) && $checkoutSession[ $key ] !== '' )
+			{
+				return (string) $checkoutSession[ $key ];
+			}
+		}
+
+		return NULL;
 	}
 }

@@ -216,6 +216,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 		}
 
 		/* Store session in database */
+		\IPS\Db::i()->delete( 'moneymotion_sessions', array( 'transaction_id=?', (int) $transaction->id ) );
 		\IPS\Db::i()->insert( 'moneymotion_sessions', array(
 			'session_id'	=> $sessionId,
 			'transaction_id'	=> (int) $transaction->id,
