@@ -127,28 +127,33 @@ class _moneymotion extends \IPS\nexus\Gateway
 			$transaction->save();
 		}
 
-		/* Always charge the current invoice amount to guarantee coupon discounts are reflected */
+		/* Charge the checkout-calculated transaction amount (matches what customer saw in IPS) */
 		$amount = $transaction->amount;
 		try
 		{
 			$invoice->recalculateTotal();
+			$summary = $invoice->summary();
 			$invoiceAmountToPay = $invoice->amountToPay( TRUE );
 
-			if ( $invoiceAmountToPay->currency === $amount->currency && $invoiceAmountToPay->amount->isPositive() )
-			{
-				if ( $amount->amount->compare( $invoiceAmountToPay->amount ) !== 0 )
-				{
-					\IPS\Log::log( "moneymotion: amount mismatch detected, syncing transaction amount - transaction_id: {$transaction->id}, old_amount: {$amount->amount}, new_amount: {$invoiceAmountToPay->amount}", 'moneymotion' );
-					$transaction->amount = $invoiceAmountToPay;
-					$transaction->save();
-				}
+			\IPS\Log::log(
+				"moneymotion: invoice summary - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, subtotal: {$summary['subtotal']->amountAsString()}, shipping: {$summary['shippingTotal']->amountAsString()}, tax: {$summary['taxTotal']->amountAsString()}, invoice_total: {$summary['total']->amountAsString()}, amount_to_pay: {$invoiceAmountToPay->amountAsString()}, currency: {$invoiceAmountToPay->currency}",
+				'moneymotion'
+			);
 
-				$amount = $invoiceAmountToPay;
+			$comparison = $amount->amount->compare( $invoiceAmountToPay->amount );
+			\IPS\Log::log(
+				"moneymotion: amount comparison - transaction_id: {$transaction->id}, transaction_amount: {$amount->amountAsString()}, invoice_amount_to_pay: {$invoiceAmountToPay->amountAsString()}, compare_result: {$comparison}",
+				'moneymotion'
+			);
+
+			if ( $invoiceAmountToPay->currency === $amount->currency && $amount->amount->compare( $invoiceAmountToPay->amount ) !== 0 )
+			{
+				\IPS\Log::log( "moneymotion: amount mismatch detected (keeping transaction amount) - transaction_id: {$transaction->id}, transaction_amount: {$amount->amount}, invoice_amount_to_pay: {$invoiceAmountToPay->amount}", 'moneymotion' );
 			}
 		}
 		catch ( \Throwable $e )
 		{
-			\IPS\Log::log( "moneymotion: failed to recalculate invoice amount, using transaction amount - transaction_id: {$transaction->id}, error: {$e->getMessage()}", 'moneymotion' );
+			\IPS\Log::log( "moneymotion: failed to build invoice summary, using transaction amount - transaction_id: {$transaction->id}, error: {$e->getMessage()}", 'moneymotion' );
 		}
 
 		/* Audit log: Payment attempt started */
@@ -211,6 +216,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 		}
 
 		/* Store session in database */
+		\IPS\Db::i()->delete( 'moneymotion_sessions', array( 'transaction_id=?', (int) $transaction->id ) );
 		\IPS\Db::i()->insert( 'moneymotion_sessions', array(
 			'session_id'	=> $sessionId,
 			'transaction_id'	=> (int) $transaction->id,
