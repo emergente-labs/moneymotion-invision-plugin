@@ -129,35 +129,9 @@ class _moneymotion extends \IPS\nexus\Gateway
 
 		/* Charge the checkout-calculated transaction amount (matches what customer saw in IPS) */
 		$amount = $transaction->amount;
-		try
-		{
-			$invoice->recalculateTotal();
-			$summary = $invoice->summary();
-			$invoiceAmountToPay = $invoice->amountToPay( TRUE );
-
-			\IPS\Log::log(
-				"moneymotion: invoice summary - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, subtotal: {$summary['subtotal']->amountAsString()}, shipping: {$summary['shippingTotal']->amountAsString()}, tax: {$summary['taxTotal']->amountAsString()}, invoice_total: {$summary['total']->amountAsString()}, amount_to_pay: {$invoiceAmountToPay->amountAsString()}, currency: {$invoiceAmountToPay->currency}",
-				'moneymotion'
-			);
-
-			$comparison = $amount->amount->compare( $invoiceAmountToPay->amount );
-			\IPS\Log::log(
-				"moneymotion: amount comparison - transaction_id: {$transaction->id}, transaction_amount: {$amount->amountAsString()}, invoice_amount_to_pay: {$invoiceAmountToPay->amountAsString()}, compare_result: {$comparison}",
-				'moneymotion'
-			);
-
-			if ( $invoiceAmountToPay->currency === $amount->currency && $amount->amount->compare( $invoiceAmountToPay->amount ) !== 0 )
-			{
-				\IPS\Log::log( "moneymotion: amount mismatch detected (keeping transaction amount) - transaction_id: {$transaction->id}, transaction_amount: {$amount->amount}, invoice_amount_to_pay: {$invoiceAmountToPay->amount}", 'moneymotion' );
-			}
-		}
-		catch ( \Throwable $e )
-		{
-			\IPS\Log::log( "moneymotion: failed to build invoice summary, using transaction amount - transaction_id: {$transaction->id}, error: {$e->getMessage()}", 'moneymotion' );
-		}
 
 		/* Audit log: Payment attempt started */
-		\IPS\Log::log( "moneymotion: payment attempt started - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, member_id: {$transaction->member->member_id}, amount: {$amount->amount} {$amount->currency}", 'moneymotion' );
+		\IPS\Log::log( "moneymotion: payment attempt started - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, member_id: {$transaction->member->member_id}, amount: {$amount->amount} {$amount->currency}, gateway_id: {$this->id}", 'moneymotion' );
 
 		/* Build a single line item using the already-discounted transaction total.
 		   IPS computes $transaction->amount after applying coupons, renewal discounts,
@@ -197,7 +171,10 @@ class _moneymotion extends \IPS\nexus\Gateway
 		/* Create checkout session */
 		try
 		{
+			\IPS\Log::log( "moneymotion: creating API client from gateway - gateway_id: {$this->id}, transaction_id: {$transaction->id}", 'moneymotion' );
 			$client = \IPS\moneymotion\Api\Client::fromGateway( $this );
+
+			\IPS\Log::log( "moneymotion: calling createCheckoutSession - transaction_id: {$transaction->id}, email: {$email}, currency: {$amount->currency}, amount_cents: {$totalCents}", 'moneymotion' );
 			$sessionId = $client->createCheckoutSession(
 				"Invoice #{$invoice->id}",
 				$urls,
@@ -207,26 +184,35 @@ class _moneymotion extends \IPS\nexus\Gateway
 				$amount->currency
 			);
 
-			\IPS\Log::log( "moneymotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: " . (int) round( (float) (string) $amount->amount * 100 ), 'moneymotion' );
+			\IPS\Log::log( "moneymotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: {$totalCents}", 'moneymotion' );
 		}
 		catch ( \Exception $e )
 		{
-			\IPS\Log::log( "moneymotion createCheckoutSession failed: " . $e->getMessage() . " | Member: {$transaction->member->member_id} | Invoice: {$invoice->id}", 'moneymotion' );
+			\IPS\Log::log( "moneymotion: createCheckoutSession FAILED - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, member_id: {$transaction->member->member_id}, error_class: " . \get_class( $e ) . ", error_message: " . $e->getMessage() . ", error_code: " . $e->getCode() . ", trace: " . $e->getTraceAsString(), 'moneymotion' );
 			throw new \LogicException( \IPS\Member::loggedIn()->language()->addToStack( 'moneymotion_error_api' ) );
 		}
 
 		/* Store session in database */
-		\IPS\Db::i()->delete( 'moneymotion_sessions', array( 'transaction_id=?', (int) $transaction->id ) );
-		\IPS\Db::i()->insert( 'moneymotion_sessions', array(
-			'session_id'	=> $sessionId,
-			'transaction_id'	=> (int) $transaction->id,
-			'invoice_id'	=> $invoice->id,
-			'amount_cents'	=> (int) round( (float) (string) $amount->amount * 100 ),
-			'currency'		=> $amount->currency,
-			'status'		=> 'pending',
-			'created_at'	=> time(),
-			'updated_at'	=> time(),
-		) );
+		try
+		{
+			\IPS\Db::i()->delete( 'moneymotion_sessions', array( 'transaction_id=?', (int) $transaction->id ) );
+			\IPS\Db::i()->insert( 'moneymotion_sessions', array(
+				'session_id'	=> $sessionId,
+				'transaction_id'	=> (int) $transaction->id,
+				'invoice_id'	=> $invoice->id,
+				'amount_cents'	=> $totalCents,
+				'currency'		=> $amount->currency,
+				'status'		=> 'pending',
+				'created_at'	=> time(),
+				'updated_at'	=> time(),
+			) );
+			\IPS\Log::log( "moneymotion: session stored in DB - session_id: {$sessionId}, transaction_id: {$transaction->id}", 'moneymotion' );
+		}
+		catch ( \Exception $e )
+		{
+			\IPS\Log::log( "moneymotion: FAILED to store session in DB - session_id: {$sessionId}, transaction_id: {$transaction->id}, error: " . $e->getMessage(), 'moneymotion' );
+			throw new \LogicException( \IPS\Member::loggedIn()->language()->addToStack( 'moneymotion_error_api' ) );
+		}
 
 		/* Store the session ID on the transaction for reference */
 		$transaction->gw_id = $sessionId;
@@ -234,6 +220,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 
 		/* Redirect customer to moneymotion checkout */
 		$checkoutUrl = "https://moneymotion.io/checkout/{$sessionId}";
+		\IPS\Log::log( "moneymotion: redirecting to checkout - session_id: {$sessionId}, transaction_id: {$transaction->id}, url: {$checkoutUrl}", 'moneymotion' );
 		\IPS\Output::i()->redirect( \IPS\Http\Url::external( $checkoutUrl ) );
 	}
 
