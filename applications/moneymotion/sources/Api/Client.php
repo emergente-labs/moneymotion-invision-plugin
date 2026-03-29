@@ -43,12 +43,21 @@ class _Client
 	{
 		$settings = json_decode( $gateway->settings, TRUE );
 
+		if ( !\is_array( $settings ) )
+		{
+			\IPS\Log::log( "moneymotion API: fromGateway - gateway settings could not be decoded (gateway_id: {$gateway->id}, raw: " . mb_substr( (string) $gateway->settings, 0, 200 ) . ")", 'moneymotion' );
+		}
+
 		$apiKey = ( \is_array( $settings ) && isset( $settings['api_key'] ) ) ? trim( (string) $settings['api_key'] ) : '';
 
 		if ( $apiKey === '' )
 		{
+			\IPS\Log::log( "moneymotion API: fromGateway - API key is empty or missing (gateway_id: {$gateway->id})", 'moneymotion' );
 			throw new \InvalidArgumentException( 'moneymotion API key is not configured.' );
 		}
+
+		$maskedKey = mb_substr( $apiKey, 0, 10 ) . '***';
+		\IPS\Log::log( "moneymotion API: fromGateway - client created (gateway_id: {$gateway->id}, key: {$maskedKey})", 'moneymotion' );
 
 		return new static( $apiKey );
 	}
@@ -84,8 +93,20 @@ class _Client
 			$body['json']['metadata'] = (object) array();
 		}
 
+		\IPS\Log::log( "moneymotion API: createCheckoutSession called - email: {$email}, currency: {$currency}, description: {$description}, lineItems: " . json_encode( $lineItems ) . ", metadata: " . json_encode( $metadata ), 'moneymotion' );
+
 		$response = $this->request( 'checkoutSessions.createCheckoutSession', $body, 'POST', array( 'x-currency' => $currency ) );
-		return $response['result']['data']['json']['checkoutSessionId'];
+
+		if ( !isset( $response['result']['data']['json']['checkoutSessionId'] ) )
+		{
+			\IPS\Log::log( "moneymotion API: createCheckoutSession response missing checkoutSessionId - full response: " . json_encode( $response ), 'moneymotion' );
+			throw new \RuntimeException( 'moneymotion API did not return a checkout session ID.' );
+		}
+
+		$sessionId = $response['result']['data']['json']['checkoutSessionId'];
+		\IPS\Log::log( "moneymotion API: createCheckoutSession success - sessionId: {$sessionId}", 'moneymotion' );
+
+		return $sessionId;
 	}
 
 	/**
@@ -116,36 +137,52 @@ class _Client
 		);
 		$headers = array_merge( $headers, $extraHeaders );
 
+		\IPS\Log::log( "moneymotion API: {$method} {$endpoint} - sending request", 'moneymotion' );
+
 		$request = $url->request()
 			->setHeaders( $headers );
 
-		if ( $method === 'POST' )
+		try
 		{
-			$payload = json_encode( $data );
-
-			if ( $payload === FALSE )
+			if ( $method === 'POST' )
 			{
-				throw new \RuntimeException( 'Unable to encode request payload.' );
-			}
+				$payload = json_encode( $data );
 
-			$response = $request->post( $payload );
+				if ( $payload === FALSE )
+				{
+					\IPS\Log::log( "moneymotion API: {$endpoint} - failed to encode JSON payload", 'moneymotion' );
+					throw new \RuntimeException( 'Unable to encode request payload.' );
+				}
+
+				$response = $request->post( $payload );
+			}
+			else
+			{
+				$response = $request->get();
+			}
 		}
-		else
+		catch ( \IPS\Http\Request\Exception $e )
 		{
-			$response = $request->get();
+			\IPS\Log::log( "moneymotion API: {$endpoint} - HTTP request exception: " . $e->getMessage() . " (code: " . $e->getCode() . ")", 'moneymotion' );
+			throw $e;
 		}
 
 		$httpCode = $response->httpResponseCode;
-		$decoded = json_decode( $response->content, TRUE );
+		$responseBody = $response->content;
+		$decoded = json_decode( $responseBody, TRUE );
+
+		\IPS\Log::log( "moneymotion API: {$endpoint} - response HTTP {$httpCode}, body length: " . \strlen( $responseBody ), 'moneymotion' );
 
 		if ( !\is_array( $decoded ) )
 		{
+			\IPS\Log::log( "moneymotion API: {$endpoint} - invalid JSON response, raw body: " . mb_substr( $responseBody, 0, 500 ), 'moneymotion' );
 			throw new \RuntimeException( 'Invalid JSON response from moneymotion API.' );
 		}
 
 		if ( $httpCode < 200 || $httpCode >= 300 )
 		{
 			$errorMessage = isset( $decoded['error'] ) ? ( \is_array( $decoded['error'] ) ? json_encode( $decoded['error'] ) : $decoded['error'] ) : 'Unknown API error';
+			\IPS\Log::log( "moneymotion API: {$endpoint} - API error HTTP {$httpCode}: {$errorMessage}, full response: " . json_encode( $decoded ), 'moneymotion' );
 			throw new \RuntimeException( $errorMessage );
 		}
 
