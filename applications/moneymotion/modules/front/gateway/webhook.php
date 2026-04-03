@@ -430,13 +430,34 @@ class _webhook extends \IPS\Dispatcher\Controller
 	 */
 	protected function findGateway()
 	{
+		/* First try the IPS-native approach with constructFromData.
+		   This can fail if the Gateway hook is not active (hook cache issue,
+		   disabled hooks, etc.) because constructFromData() calls gateways()
+		   which only includes 'moneymotion' when the hook is loaded. */
 		try
 		{
 			$gatewayRow = \IPS\Db::i()->select( '*', 'nexus_paymethods', array( 'm_gateway=?', 'moneymotion' ) )->first();
-			return \IPS\nexus\Gateway::constructFromData( $gatewayRow );
+
+			try
+			{
+				return \IPS\nexus\Gateway::constructFromData( $gatewayRow );
+			}
+			catch ( \Exception $e )
+			{
+				/* constructFromData failed (hook not active) - return a
+				   lightweight object with the settings the webhook needs */
+				$obj = new \stdClass;
+				$obj->settings = isset( $gatewayRow['m_settings'] ) ? $gatewayRow['m_settings'] : '{}';
+				return $obj;
+			}
+		}
+		catch ( \UnderflowException $e )
+		{
+			return NULL;
 		}
 		catch ( \Exception $e )
 		{
+			\IPS\Log::log( "moneymotion webhook: findGateway error - " . get_class( $e ) . ": " . $e->getMessage(), 'moneymotion' );
 			return NULL;
 		}
 	}
