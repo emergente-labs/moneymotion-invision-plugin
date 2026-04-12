@@ -5,3 +5,4 @@
 /vendor
 /composer
 /.phpunit.cache
+/PAYMENT-FLOW.md
