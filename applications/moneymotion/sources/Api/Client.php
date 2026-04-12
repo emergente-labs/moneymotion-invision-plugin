@@ -85,7 +85,27 @@ class _Client
 		}
 
 		$response = $this->request( 'checkoutSessions.createCheckoutSession', $body, 'POST', array( 'x-currency' => $currency ) );
-		return $response['result']['data']['json']['checkoutSessionId'];
+
+		/* Strict response-shape validation. The docs shape is
+		   { result: { data: { json: { checkoutSessionId: "..." } } } }
+		   but a misbehaving edge (WAF / CDN / proxy) could return 200 with
+		   a different body. Check every level rather than relying on PHP's
+		   silent null-coalescence, which would let an empty sessionId
+		   propagate into the redirect URL as `https://moneymotion.io/checkout/`
+		   — a broken checkout page for the customer. */
+		if ( !isset( $response['result']['data']['json'] ) || !\is_array( $response['result']['data']['json'] ) )
+		{
+			throw new \RuntimeException( 'moneymotion API returned an unexpected response shape — missing result.data.json envelope.' );
+		}
+
+		$sessionId = $response['result']['data']['json']['checkoutSessionId'] ?? null;
+
+		if ( !\is_string( $sessionId ) || trim( $sessionId ) === '' )
+		{
+			throw new \RuntimeException( 'moneymotion API returned an empty checkoutSessionId.' );
+		}
+
+		return $sessionId;
 	}
 
 	/**
@@ -146,6 +166,16 @@ class _Client
 		if ( $httpCode < 200 || $httpCode >= 300 )
 		{
 			$errorMessage = isset( $decoded['error'] ) ? ( \is_array( $decoded['error'] ) ? json_encode( $decoded['error'] ) : $decoded['error'] ) : 'Unknown API error';
+			throw new \RuntimeException( $errorMessage );
+		}
+
+		/* Some gateways return 200 OK with an `error` envelope (and no
+		   success data) — e.g. when the body parsed but business logic
+		   rejected the call. Treat that as a failure instead of letting
+		   downstream code hit undefined keys. */
+		if ( isset( $decoded['error'] ) && !isset( $decoded['result'] ) )
+		{
+			$errorMessage = \is_array( $decoded['error'] ) ? json_encode( $decoded['error'] ) : (string) $decoded['error'];
 			throw new \RuntimeException( $errorMessage );
 		}
 

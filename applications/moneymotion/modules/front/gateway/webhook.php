@@ -187,6 +187,22 @@ class _webhook extends \IPS\Dispatcher\Controller
 			return;
 		}
 
+		/* Atomic claim — flip 'pending' → 'processing' only if it's still
+		   'pending'. If another webhook (e.g. moneymotion retry) is racing us,
+		   only one will win the claim; the other sees affected_rows = 0 and
+		   bails out. This is the lock-free equivalent of SELECT … FOR UPDATE. */
+		$affected = \IPS\Db::i()->update(
+			'moneymotion_sessions',
+			array( 'status' => 'processing', 'updated_at' => time() ),
+			array( "session_id=? AND status='pending'", $sessionId )
+		);
+
+		if ( !$affected )
+		{
+			\IPS\Log::log( "moneymotion webhook: session {$sessionId} not claimable (concurrent webhook raced us, or status already moved)", 'moneymotion' );
+			return;
+		}
+
 		/* Load the IPS transaction */
 		try
 		{

@@ -165,10 +165,16 @@ class _moneymotion extends \IPS\nexus\Gateway
 
 		   Locale-safe conversion: PHP's (float) cast depends on the active locale,
 		   so "10,50" (comma-decimal locales) would become 10.0 and lose cents.
-		   We normalize the decimal separator to a period first. */
+		   We normalize the decimal separator to a period first.
+
+		   Currency-aware minor-unit conversion: most currencies have 2 decimals
+		   and multiply by 100, but zero-decimal currencies (JPY, KRW, HUF, CLP, VND,
+		   ISK, UGX, XOF, XAF, etc.) are quoted in whole units. Multiplying a ¥500
+		   charge by 100 would bill the customer ¥50,000. */
 		$amountString = (string) $amount->amount;
 		$amountString = str_replace( ',', '.', $amountString );
-		$totalCents = (int) round( (float) $amountString * 100 );
+		$multiplier = self::currencyMinorUnitMultiplier( (string) $amount->currency );
+		$totalCents = (int) round( (float) $amountString * $multiplier );
 		$lineItems = array(
 			array(
 				'name'					=> $invoice->title ?: "Invoice #{$invoice->id}",
@@ -304,5 +310,41 @@ class _moneymotion extends \IPS\nexus\Gateway
 		$member = \IPS\Member::loggedIn();
 		$data = "{$transactionId}:{$action}:{$member->member_id}:" . \IPS\Settings::i()->cookie_login_key;
 		return hash_hmac( 'sha256', $data, \IPS\Settings::i()->cookie_login_key );
+	}
+
+	/**
+	 * Return the ISO 4217 minor-unit multiplier for a currency.
+	 *
+	 * For most currencies (USD, EUR, GBP, BRL, …) this is 100. For
+	 * zero-decimal currencies — quoted in whole units — this is 1.
+	 *
+	 * List: https://en.wikipedia.org/wiki/ISO_4217#Minor_units
+	 *
+	 * @param string $currency ISO 4217 code (case-insensitive)
+	 * @return int 1, 100, or 1000
+	 */
+	protected static function currencyMinorUnitMultiplier( $currency )
+	{
+		$c = strtoupper( (string) $currency );
+
+		/* 0-decimal currencies — multiply by 1 */
+		static $zeroDecimal = array(
+			'BIF', 'CLP', 'DJF', 'GNF', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG',
+			'RWF', 'UGX', 'UYI', 'VND', 'VUV', 'XAF', 'XOF', 'XPF', 'HUF',
+		);
+		if ( \in_array( $c, $zeroDecimal, TRUE ) )
+		{
+			return 1;
+		}
+
+		/* 3-decimal currencies — multiply by 1000 */
+		static $threeDecimal = array( 'BHD', 'IQD', 'JOD', 'KWD', 'LYD', 'OMR', 'TND' );
+		if ( \in_array( $c, $threeDecimal, TRUE ) )
+		{
+			return 1000;
+		}
+
+		/* Default: 2-decimal (USD, EUR, GBP, BRL, etc.) */
+		return 100;
 	}
 }

@@ -168,11 +168,106 @@ class Db
 	public function update( $table, $data, $where = null )
 	{
 		$this->operations[] = array( 'type' => 'update', 'table' => $table, 'data' => $data, 'where' => $where );
+
+		/* Actually mutate the in-memory mockData so subsequent selects see
+		   the new state. Also returns affected_rows so claim-pattern code
+		   (UPDATE ... WHERE status='pending') can detect whether it won. */
+		$affected = 0;
+		if ( isset( $this->mockData[ $table ] ) )
+		{
+			foreach ( $this->mockData[ $table ] as $idx => $row )
+			{
+				if ( $this->matchesWhere( $row, $where ) )
+				{
+					$this->mockData[ $table ][ $idx ] = array_merge( $row, $data );
+					$affected++;
+				}
+			}
+		}
+		return $affected;
 	}
 
 	public function delete( $table, $where = null )
 	{
 		$this->operations[] = array( 'type' => 'delete', 'table' => $table, 'where' => $where );
+
+		$affected = 0;
+		if ( isset( $this->mockData[ $table ] ) )
+		{
+			$kept = array();
+			foreach ( $this->mockData[ $table ] as $row )
+			{
+				if ( $this->matchesWhere( $row, $where ) )
+				{
+					$affected++;
+				}
+				else
+				{
+					$kept[] = $row;
+				}
+			}
+			$this->mockData[ $table ] = $kept;
+		}
+		return $affected;
+	}
+
+	/**
+	 * Evaluate a WHERE clause against a single row.
+	 *
+	 * Supports the formats the plugin actually uses:
+	 *   - null                                          → match all
+	 *   - array( 'col=?', val )                         → simple equality
+	 *   - array( "col=? AND col2='literal'", val )      → claim-pattern (one bound
+	 *       param + a literal comparison inline)
+	 */
+	protected function matchesWhere( array $row, $where )
+	{
+		if ( $where === null )
+		{
+			return true;
+		}
+		if ( !\is_array( $where ) || !isset( $where[0] ) )
+		{
+			return true;
+		}
+
+		$clause = (string) $where[0];
+		$params = \array_slice( $where, 1 );
+
+		/* Pull out 'col=?' bindings in order. */
+		$paramIdx = 0;
+		$clauseRemaining = $clause;
+
+		/* Match simple-equality placeholders: col=? */
+		if ( preg_match_all( '/(\w+)\s*=\s*\?/', $clause, $m ) )
+		{
+			foreach ( $m[1] as $col )
+			{
+				if ( !array_key_exists( $paramIdx, $params ) ) return false;
+				$bound = $params[ $paramIdx++ ];
+				if ( !isset( $row[ $col ] ) || (string) $row[ $col ] !== (string) $bound )
+				{
+					return false;
+				}
+			}
+			/* Strip the bound parts so we can inspect literal predicates */
+			$clauseRemaining = preg_replace( '/\w+\s*=\s*\?/', '', $clause );
+		}
+
+		/* Match literal-equality: col='literal' */
+		if ( preg_match_all( "/(\w+)\s*=\s*'([^']*)'/", $clauseRemaining, $m ) )
+		{
+			foreach ( $m[1] as $i => $col )
+			{
+				$literal = $m[2][ $i ];
+				if ( !isset( $row[ $col ] ) || (string) $row[ $col ] !== (string) $literal )
+				{
+					return false;
+				}
+			}
+		}
+
+		return true;
 	}
 
 	public function checkForTable( $table )
