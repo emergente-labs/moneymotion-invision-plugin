@@ -161,8 +161,14 @@ class _moneymotion extends \IPS\nexus\Gateway
 
 		/* Build a single line item using the already-discounted transaction total.
 		   IPS computes $transaction->amount after applying coupons, renewal discounts,
-		   and taxes — matching how Stripe and other IPS gateways handle it. */
-		$totalCents = (int) round( (float) (string) $amount->amount * 100 );
+		   and taxes — matching how Stripe and other IPS gateways handle it.
+
+		   Locale-safe conversion: PHP's (float) cast depends on the active locale,
+		   so "10,50" (comma-decimal locales) would become 10.0 and lose cents.
+		   We normalize the decimal separator to a period first. */
+		$amountString = (string) $amount->amount;
+		$amountString = str_replace( ',', '.', $amountString );
+		$totalCents = (int) round( (float) $amountString * 100 );
 		$lineItems = array(
 			array(
 				'name'					=> $invoice->title ?: "Invoice #{$invoice->id}",
@@ -207,7 +213,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 				$amount->currency
 			);
 
-			\IPS\Log::log( "moneymotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: " . (int) round( (float) (string) $amount->amount * 100 ), 'moneymotion' );
+			\IPS\Log::log( "moneymotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: {$totalCents}", 'moneymotion' );
 		}
 		catch ( \Exception $e )
 		{
@@ -221,7 +227,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 			'session_id'	=> $sessionId,
 			'transaction_id'	=> (int) $transaction->id,
 			'invoice_id'	=> $invoice->id,
-			'amount_cents'	=> (int) round( (float) (string) $amount->amount * 100 ),
+			'amount_cents'	=> $totalCents,
 			'currency'		=> $amount->currency,
 			'status'		=> 'pending',
 			'created_at'	=> time(),
