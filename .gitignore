@@ -4,6 +4,5 @@
 /standalone
 /vendor
 /composer
-/composer.phar
 /.phpunit.cache
 /PAYMENT-FLOW.md
