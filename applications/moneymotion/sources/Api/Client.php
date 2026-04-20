@@ -18,6 +18,27 @@ class _Client
 	const API_BASE_URL = 'https://api.moneymotion.io';
 
 	/**
+	 * @var int Per-request timeout in seconds. IPS defaults to 10s
+	 * (\IPS\DEFAULT_REQUEST_TIMEOUT); a payment API doing fraud checks
+	 * can occasionally exceed that, so we bump it slightly.
+	 */
+	const HTTP_TIMEOUT_SECONDS = 15;
+
+	/**
+	 * @var int Total attempts for a single API call (1 initial + retries).
+	 * We only retry on cURL-level failures (DNS / connect refused /
+	 * timeout-before-bytes), where the server has not seen the request and
+	 * a retry cannot create a duplicate session.
+	 */
+	const MAX_ATTEMPTS = 2;
+
+	/**
+	 * @var int Sleep between attempts. Long enough that a transient blip
+	 * has time to clear; short enough that the customer doesn't bail.
+	 */
+	const RETRY_BACKOFF_MICROSECONDS = 250000;
+
+	/**
 	 * @var string API Key
 	 */
 	protected $apiKey;
@@ -136,9 +157,7 @@ class _Client
 		);
 		$headers = array_merge( $headers, $extraHeaders );
 
-		$request = $url->request()
-			->setHeaders( $headers );
-
+		$payload = NULL;
 		if ( $method === 'POST' )
 		{
 			$payload = json_encode( $data );
@@ -147,12 +166,32 @@ class _Client
 			{
 				throw new \RuntimeException( 'Unable to encode request payload.' );
 			}
-
-			$response = $request->post( $payload );
 		}
-		else
+
+		/* Network-level retry loop. We retry only on \IPS\Http\Request\Exception
+		   — cURL-level failures (DNS, connect refused, timeout before any bytes
+		   reach the wire). In those cases the server provably hasn't processed
+		   anything, so a retry cannot create a duplicate checkout session.
+		   We deliberately do NOT retry HTTP 5xx responses: the server received
+		   the request and may have side-effected on it. */
+		$attempt = 0;
+		while ( TRUE )
 		{
-			$response = $request->get();
+			try
+			{
+				$request = $url->request( self::HTTP_TIMEOUT_SECONDS )->setHeaders( $headers );
+				$response = ( $method === 'POST' ) ? $request->post( $payload ) : $request->get();
+				break;
+			}
+			catch ( \IPS\Http\Request\Exception $e )
+			{
+				$attempt++;
+				if ( $attempt >= self::MAX_ATTEMPTS )
+				{
+					throw $e;
+				}
+				usleep( self::RETRY_BACKOFF_MICROSECONDS );
+			}
 		}
 
 		$httpCode = $response->httpResponseCode;

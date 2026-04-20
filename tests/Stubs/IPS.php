@@ -369,9 +369,9 @@ class Url
 		return $this->url;
 	}
 
-	public function request()
+	public function request( $timeout = null )
 	{
-		return new Url\Request( $this->url );
+		return new Url\Request( $this->url, $timeout );
 	}
 }
 
@@ -381,6 +381,7 @@ class Request
 {
 	protected $url;
 	protected $headers = array();
+	public $timeout;
 
 	/** @var array Captured HTTP requests for assertions */
 	public static $captured = array();
@@ -388,15 +389,28 @@ class Request
 	/** @var \IPS\Http\Response|\Exception|null Next response to return */
 	public static $nextResponse;
 
-	public function __construct( $url )
+	/** @var array<int, \IPS\Http\Response|\Exception> Sequenced responses; consumed before $nextResponse */
+	public static $responseQueue = array();
+
+	public function __construct( $url, $timeout = null )
 	{
 		$this->url = $url;
+		$this->timeout = $timeout;
 	}
 
 	public function setHeaders( $headers )
 	{
 		$this->headers = $headers;
 		return $this;
+	}
+
+	protected function nextResponseToServe()
+	{
+		if ( !empty( static::$responseQueue ) )
+		{
+			return array_shift( static::$responseQueue );
+		}
+		return static::$nextResponse;
 	}
 
 	public function post( $data )
@@ -406,16 +420,19 @@ class Request
 			'url'     => $this->url,
 			'headers' => $this->headers,
 			'body'    => $data,
+			'timeout' => $this->timeout,
 		);
 
-		if ( static::$nextResponse instanceof \Exception )
+		$response = $this->nextResponseToServe();
+
+		if ( $response instanceof \Exception )
 		{
-			throw static::$nextResponse;
+			throw $response;
 		}
 
-		if ( static::$nextResponse )
+		if ( $response )
 		{
-			return static::$nextResponse;
+			return $response;
 		}
 
 		return new \IPS\Http\Response( 200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_mocked"}}}}' );
@@ -427,16 +444,35 @@ class Request
 			'method'  => 'GET',
 			'url'     => $this->url,
 			'headers' => $this->headers,
+			'timeout' => $this->timeout,
 		);
-		return static::$nextResponse ?: new \IPS\Http\Response( 200, '{}' );
+
+		$response = $this->nextResponseToServe();
+
+		if ( $response instanceof \Exception )
+		{
+			throw $response;
+		}
+
+		return $response ?: new \IPS\Http\Response( 200, '{}' );
 	}
 
 	public static function reset()
 	{
 		static::$captured = array();
 		static::$nextResponse = null;
+		static::$responseQueue = array();
 	}
 }
+
+namespace IPS\Http\Request;
+
+/**
+ * Mirrors \IPS\Http\Request\_Exception in IPS — extends RuntimeException.
+ * Thrown by the real IPS HTTP layer for cURL-level failures: timeout,
+ * connection refused, DNS failure, TLS handshake error.
+ */
+class Exception extends \RuntimeException {}
 
 namespace IPS\Http;
 
@@ -574,6 +610,7 @@ class Gateway
 {
 	public $id = 1;
 	public $settings = '{}';
+	public $countries = '*';
 
 	public static function constructFromData( $data )
 	{
@@ -586,6 +623,27 @@ class Gateway
 	public static function gateways()
 	{
 		return array();
+	}
+
+	/* ---- Inherited methods our plugin deliberately does NOT override ----
+	   These mirror the parent signatures from
+	   ips_4.7.20/applications/nexus/sources/Gateway/Gateway.php so that
+	   reflection-based contract tests can verify our subclass inherits
+	   rather than overrides them. */
+
+	public function refund( \IPS\nexus\Transaction $transaction, $amount = NULL )
+	{
+		throw new \Exception;
+	}
+
+	public function checkValidity( \IPS\nexus\Money $amount, $billingAddress = NULL, \IPS\nexus\Customer $customer = NULL, $recurrings = array() )
+	{
+		return TRUE;
+	}
+
+	public function fraudCheck( \IPS\nexus\Transaction $transaction )
+	{
+		return Transaction::STATUS_PAID;
 	}
 }
 
