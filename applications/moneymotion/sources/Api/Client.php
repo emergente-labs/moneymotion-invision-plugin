@@ -28,9 +28,14 @@ class _Client
 	const RPC_ENDPOINT = '/rpc';
 
 	/**
-	 * @var string Plugin version used in User-Agent; keep in sync with application.json::app_version
+	 * @var string Fallback version used only if the installed application row cannot be read
 	 */
-	const PLUGIN_VERSION = '3.0.18';
+	const PLUGIN_VERSION_FALLBACK = '0.0.0';
+
+	/**
+	 * @var string|null Cached plugin version
+	 */
+	protected static $cachedPluginVersion = NULL;
 
 	/**
 	 * @var string API Key
@@ -142,7 +147,7 @@ class _Client
 			'Content-Type'	=> 'application/ndjson',
 			'Accept'		=> 'application/ndjson',
 			'x-api-key'		=> $apiKey,
-			'User-Agent'	=> 'moneymotion IPS Plugin/' . static::PLUGIN_VERSION . ' (PHP ' . PHP_VERSION . ')',
+			'User-Agent'	=> 'moneymotion IPS Plugin/' . static::pluginVersion() . ' (PHP ' . PHP_VERSION . ')',
 		);
 		$headers = array_merge( $headers, $extraHeaders );
 
@@ -360,5 +365,43 @@ class _Client
 	{
 		$computed = base64_encode( hash_hmac( 'sha512', $rawBody, $secret, TRUE ) );
 		return hash_equals( $computed, $signature );
+	}
+
+	/**
+	 * Resolve the installed plugin version from the IPS application row.
+	 *
+	 * Falls back to PLUGIN_VERSION_FALLBACK if IPS isn't loaded or the row is
+	 * unreadable — this code path runs in a PHP request handler so
+	 * `\IPS\Application::load()` is normally safe to call, but we don't want a
+	 * User-Agent lookup to take down a checkout create.
+	 *
+	 * @return	string
+	 */
+	protected static function pluginVersion()
+	{
+		if ( static::$cachedPluginVersion !== NULL )
+		{
+			return static::$cachedPluginVersion;
+		}
+
+		$version = static::PLUGIN_VERSION_FALLBACK;
+		try
+		{
+			if ( \class_exists( '\\IPS\\Application' ) )
+			{
+				$app = \IPS\Application::load( 'moneymotion' );
+				if ( \is_object( $app ) && isset( $app->version ) && \is_string( $app->version ) && $app->version !== '' )
+				{
+					$version = $app->version;
+				}
+			}
+		}
+		catch ( \Exception $e )
+		{
+			// swallow — `$version` keeps the fallback
+		}
+
+		static::$cachedPluginVersion = $version;
+		return $version;
 	}
 }
