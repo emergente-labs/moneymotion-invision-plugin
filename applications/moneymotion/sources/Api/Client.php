@@ -9,6 +9,11 @@ namespace IPS\moneymotion\Api;
 
 /**
  * moneymotion API Client
+ *
+ * Talks to the backend over the Effect RPC wire format (NDJSON) at POST /rpc.
+ * The legacy tRPC path (/trpc/...) went through a compatibility proxy that
+ * converted tRPC → Effect RPC on the server; this client now calls Effect RPC
+ * directly so the plugin no longer depends on that proxy.
  */
 class _Client
 {
@@ -16,6 +21,16 @@ class _Client
 	 * @var string moneymotion API base URL
 	 */
 	const API_BASE_URL = 'https://api.moneymotion.io';
+
+	/**
+	 * @var string Effect RPC endpoint path
+	 */
+	const RPC_ENDPOINT = '/rpc';
+
+	/**
+	 * @var string Plugin version used in User-Agent; keep in sync with application.json::app_version
+	 */
+	const PLUGIN_VERSION = '3.0.18';
 
 	/**
 	 * @var string API Key
@@ -66,90 +81,271 @@ class _Client
 	 */
 	public function createCheckoutSession( $description, $urls, $email, $lineItems, $metadata = array(), $currency = 'BRL' )
 	{
-		$body = array(
-			'json' => array(
-				'description'	=> $description,
-				'urls'			=> $urls,
-				'userInfo'		=> array( 'email' => $email ),
-				'lineItems'		=> $lineItems,
-			)
+		$payload = array(
+			'description'	=> $description,
+			'urls'			=> $urls,
+			'userInfo'		=> array( 'email' => $email ),
+			'lineItems'		=> $lineItems,
 		);
 
 		if ( ! empty( $metadata ) )
 		{
-			$body['json']['metadata'] = (object) $metadata;
-		}
-		else
-		{
-			$body['json']['metadata'] = (object) array();
+			$payload['metadata'] = (object) $metadata;
 		}
 
-		$response = $this->request( 'checkoutSessions.createCheckoutSession', $body, 'POST', array( 'x-currency' => $currency ) );
-		return $response['result']['data']['json']['checkoutSessionId'];
+		$result = $this->rpcCall(
+			'CheckoutSessionsCreateCheckoutSession',
+			$payload,
+			array( 'x-currency' => $currency )
+		);
+
+		if ( ! \is_array( $result ) || ! isset( $result['checkoutSessionId'] ) )
+		{
+			throw new \RuntimeException( 'moneymotion RPC response missing checkoutSessionId.' );
+		}
+
+		return (string) $result['checkoutSessionId'];
 	}
 
 	/**
-	 * Send request
+	 * Execute a single Effect RPC call over HTTP.
 	 *
-	 * @param	string	$endpoint		Endpoint
-	 * @param	array	$data			Data
-	 * @param	string	$method			Method
-	 * @param	array	$extraHeaders	Extra headers
-	 * @return	array
+	 * Wire format:
+	 *   POST /rpc  Content-Type: application/ndjson
+	 *   Body: one JSON object per line, starting with:
+	 *     {"_tag":"Request","id":"0","tag":"<RpcName>","payload":<payload>,"headers":[]}\n
+	 *
+	 *   Response is NDJSON. The terminal message we care about is:
+	 *     {"_tag":"Exit","exit":{"_tag":"Success","value":<value>}}
+	 *   On failure:
+	 *     {"_tag":"Exit","exit":{"_tag":"Failure","cause":<cause>}}
+	 *     {"_tag":"Defect",...}
+	 *
+	 * @param	string	$tag			PascalCase RPC name (e.g. "CheckoutSessionsCreateCheckoutSession")
+	 * @param	mixed	$payload		RPC input (already deserialized — no superjson envelope)
+	 * @param	array	$extraHeaders	Additional HTTP headers (e.g. x-currency)
+	 * @return	mixed	The decoded Success value
 	 * @throws	\IPS\Http\Request\Exception
 	 * @throws	\RuntimeException
 	 */
-	protected function request( $endpoint, array $data = array(), $method = 'POST', array $extraHeaders = array() )
+	protected function rpcCall( $tag, $payload, array $extraHeaders = array() )
 	{
-		$url = \IPS\Http\Url::external( static::API_BASE_URL . '/' . $endpoint );
 		$apiKey = trim( (string) $this->apiKey );
-
 		if ( $apiKey === '' )
 		{
 			throw new \RuntimeException( 'moneymotion API key is empty.' );
 		}
 
+		$url = \IPS\Http\Url::external( static::API_BASE_URL . static::RPC_ENDPOINT );
+
 		$headers = array(
-			'Content-Type'	=> 'application/json',
-			'x-api-key'	=> $apiKey,
-			'User-Agent'	=> 'moneymotion IPS Plugin/3.0.16 (PHP ' . PHP_VERSION . ')',
+			'Content-Type'	=> 'application/ndjson',
+			'Accept'		=> 'application/ndjson',
+			'x-api-key'		=> $apiKey,
+			'User-Agent'	=> 'moneymotion IPS Plugin/' . static::PLUGIN_VERSION . ' (PHP ' . PHP_VERSION . ')',
 		);
 		$headers = array_merge( $headers, $extraHeaders );
 
-		$request = $url->request()
-			->setHeaders( $headers );
+		$envelope = array(
+			'_tag'		=> 'Request',
+			'id'		=> '0',
+			'tag'		=> (string) $tag,
+			'payload'	=> $payload,
+			'headers'	=> array(),
+		);
 
-		if ( $method === 'POST' )
+		$body = json_encode( $envelope );
+		if ( $body === FALSE )
 		{
-			$payload = json_encode( $data );
-
-			if ( $payload === FALSE )
-			{
-				throw new \RuntimeException( 'Unable to encode request payload.' );
-			}
-
-			$response = $request->post( $payload );
+			throw new \RuntimeException( 'Unable to encode RPC request envelope: ' . json_last_error_msg() );
 		}
-		else
-		{
-			$response = $request->get();
-		}
+		$body .= "\n";
 
-		$httpCode = $response->httpResponseCode;
-		$decoded = json_decode( $response->content, TRUE );
+		$response = $url->request()
+			->setHeaders( $headers )
+			->post( $body );
 
-		if ( !\is_array( $decoded ) )
-		{
-			throw new \RuntimeException( 'Invalid JSON response from moneymotion API.' );
-		}
+		$httpCode = (int) $response->httpResponseCode;
+		$content = (string) $response->content;
 
 		if ( $httpCode < 200 || $httpCode >= 300 )
 		{
-			$errorMessage = isset( $decoded['error'] ) ? ( \is_array( $decoded['error'] ) ? json_encode( $decoded['error'] ) : $decoded['error'] ) : 'Unknown API error';
-			throw new \RuntimeException( $errorMessage );
+			throw new \RuntimeException( sprintf(
+				'moneymotion RPC %s returned HTTP %d: %s',
+				$tag,
+				$httpCode,
+				mb_substr( $content, 0, 500 )
+			) );
 		}
 
-		return $decoded;
+		return static::parseRpcExit( $tag, $content );
+	}
+
+	/**
+	 * Parse an Effect RPC NDJSON response and return the Success value.
+	 *
+	 * @param	string	$tag		RPC name, for error messages
+	 * @param	string	$content	Full response body
+	 * @return	mixed	The Success value (typically an associative array)
+	 * @throws	\RuntimeException
+	 */
+	protected static function parseRpcExit( $tag, $content )
+	{
+		$lines = preg_split( '/\r?\n/', trim( $content ) );
+		if ( ! \is_array( $lines ) )
+		{
+			throw new \RuntimeException( sprintf(
+				'moneymotion RPC %s: unable to split response into NDJSON lines.',
+				$tag
+			) );
+		}
+
+		foreach ( $lines as $line )
+		{
+			$line = trim( (string) $line );
+			if ( $line === '' )
+			{
+				continue;
+			}
+
+			$message = json_decode( $line, TRUE );
+			if ( ! \is_array( $message ) || ! isset( $message['_tag'] ) )
+			{
+				continue;
+			}
+
+			$msgTag = (string) $message['_tag'];
+
+			if ( $msgTag === 'Defect' )
+			{
+				throw new \RuntimeException( sprintf(
+					'moneymotion RPC %s failed with defect: %s',
+					$tag,
+					json_encode( $message )
+				) );
+			}
+
+			if ( $msgTag !== 'Exit' || ! isset( $message['exit'] ) || ! \is_array( $message['exit'] ) )
+			{
+				continue;
+			}
+
+			$exit = $message['exit'];
+			$exitTag = isset( $exit['_tag'] ) ? (string) $exit['_tag'] : '';
+
+			if ( $exitTag === 'Success' )
+			{
+				return isset( $exit['value'] ) ? $exit['value'] : NULL;
+			}
+
+			$cause = isset( $exit['cause'] ) ? $exit['cause'] : NULL;
+			throw new \RuntimeException( sprintf(
+				'moneymotion RPC %s failed: %s',
+				$tag,
+				static::describeRpcCause( $cause )
+			) );
+		}
+
+		throw new \RuntimeException( sprintf(
+			'moneymotion RPC %s: response contained no Exit message. Body: %s',
+			$tag,
+			mb_substr( $content, 0, 500 )
+		) );
+	}
+
+	/**
+	 * Walk an Effect Cause tree and produce a short human-readable description.
+	 *
+	 * Cause shapes (simplified):
+	 *   { _tag: "Fail",       error:   <RpcError|any> }
+	 *   { _tag: "Die",        defect:  <unknown> }
+	 *   { _tag: "Interrupt" }
+	 *   { _tag: "Sequential"|"Parallel", left: <Cause>, right: <Cause> }
+	 *   { _tag: "Empty" }
+	 *
+	 * @param	mixed	$cause
+	 * @return	string
+	 */
+	protected static function describeRpcCause( $cause )
+	{
+		if ( ! \is_array( $cause ) )
+		{
+			if ( \is_string( $cause ) && $cause !== '' )
+			{
+				return $cause;
+			}
+			return json_encode( $cause );
+		}
+
+		$message = static::extractCauseMessage( $cause );
+		if ( $message !== NULL && $message !== '' )
+		{
+			return $message;
+		}
+
+		return json_encode( $cause );
+	}
+
+	/**
+	 * Recursive helper for describeRpcCause().
+	 *
+	 * @param	array	$node
+	 * @return	string|null
+	 */
+	protected static function extractCauseMessage( array $node )
+	{
+		$tag = isset( $node['_tag'] ) ? (string) $node['_tag'] : '';
+
+		if ( $tag === 'Fail' && isset( $node['error'] ) )
+		{
+			$error = $node['error'];
+			if ( \is_array( $error ) )
+			{
+				if ( isset( $error['message'] ) && \is_string( $error['message'] ) )
+				{
+					return $error['message'];
+				}
+				if ( isset( $error['_tag'] ) && \is_string( $error['_tag'] ) )
+				{
+					return $error['_tag'];
+				}
+				return json_encode( $error );
+			}
+			return \is_string( $error ) ? $error : json_encode( $error );
+		}
+
+		if ( $tag === 'Die' && isset( $node['defect'] ) )
+		{
+			$defect = $node['defect'];
+			if ( \is_array( $defect ) && isset( $defect['message'] ) && \is_string( $defect['message'] ) )
+			{
+				return $defect['message'];
+			}
+			return \is_string( $defect ) ? $defect : json_encode( $defect );
+		}
+
+		if ( $tag === 'Interrupt' )
+		{
+			return 'Operation was interrupted';
+		}
+
+		if ( $tag === 'Sequential' || $tag === 'Parallel' )
+		{
+			if ( isset( $node['left'] ) && \is_array( $node['left'] ) )
+			{
+				$left = static::extractCauseMessage( $node['left'] );
+				if ( $left !== NULL && $left !== '' )
+				{
+					return $left;
+				}
+			}
+			if ( isset( $node['right'] ) && \is_array( $node['right'] ) )
+			{
+				return static::extractCauseMessage( $node['right'] );
+			}
+		}
+
+		return NULL;
 	}
 
 	/**
