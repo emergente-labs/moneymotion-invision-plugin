@@ -1,9 +1,13 @@
 <?php
 /**
- * Integration tests for API Client HTTP request building
+ * Integration tests for API Client HTTP request building (Effect RPC / NDJSON).
  *
- * Uses the stub's captured request mechanism to verify that
- * createCheckoutSession() sends exactly what moneymotion API expects.
+ * Verifies that createCheckoutSession() sends the Effect RPC envelope the
+ * moneymotion backend expects at POST /rpc:
+ *
+ *     POST https://api.moneymotion.io/rpc
+ *     Content-Type: application/ndjson
+ *     {"_tag":"Request","id":"0","tag":"CheckoutSessionsCreateCheckoutSession","payload":{…},"headers":[]}
  */
 
 namespace Tests\Integration;
@@ -20,24 +24,31 @@ class ApiClientRequestTest extends TestCase
 		$this->client = new \IPS\moneymotion\Api\_Client( 'mk_live_test_key_abc' );
 	}
 
-	public function testSendsPostRequestToCorrectUrl(): void
+	/**
+	 * Helper — returns the decoded Effect RPC envelope that was sent on the
+	 * most recent POST. Strips the trailing newline required by the NDJSON
+	 * framing before decoding.
+	 */
+	private function capturedEnvelope(): array
+	{
+		$req = \IPS\Http\Url\Request::$captured[0];
+		$body = rtrim( $req['body'], "\n" );
+		$decoded = json_decode( $body, true );
+		$this->assertIsArray( $decoded, 'Request body must be a single-line JSON envelope' );
+		return $decoded;
+	}
+
+	public function testSendsPostRequestToRpcEndpoint(): void
 	{
 		$this->client->createCheckoutSession(
 			'Test Invoice',
 			array(
 				'success' => 'https://example.com/success',
-				'cancel' => 'https://example.com/cancel',
+				'cancel'  => 'https://example.com/cancel',
 				'failure' => 'https://example.com/failure',
 			),
 			'test@example.com',
-			array(
-				array(
-					'name' => 'Test Item',
-					'description' => 'Test',
-					'pricePerItemInCents' => 5000,
-					'quantity' => 1,
-				),
-			)
+			array( array( 'name' => 'Test Item', 'description' => 'Test', 'pricePerItemInCents' => 5000, 'quantity' => 1 ) )
 		);
 
 		$captured = \IPS\Http\Url\Request::$captured;
@@ -45,10 +56,7 @@ class ApiClientRequestTest extends TestCase
 
 		$req = $captured[0];
 		$this->assertSame( 'POST', $req['method'] );
-		$this->assertStringContainsString(
-			'https://api.moneymotion.io/checkoutSessions.createCheckoutSession',
-			$req['url']
-		);
+		$this->assertSame( 'https://api.moneymotion.io/rpc', $req['url'] );
 	}
 
 	public function testIncludesApiKeyHeader(): void
@@ -65,7 +73,7 @@ class ApiClientRequestTest extends TestCase
 		$this->assertSame( 'mk_live_test_key_abc', $captured['headers']['x-api-key'] );
 	}
 
-	public function testIncludesContentTypeHeader(): void
+	public function testContentTypeIsNdjson(): void
 	{
 		$this->client->createCheckoutSession(
 			'Test',
@@ -75,7 +83,8 @@ class ApiClientRequestTest extends TestCase
 		);
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		$this->assertSame( 'application/json', $captured['headers']['Content-Type'] );
+		$this->assertSame( 'application/ndjson', $captured['headers']['Content-Type'] );
+		$this->assertSame( 'application/ndjson', $captured['headers']['Accept'] );
 	}
 
 	public function testIncludesCurrencyHeader(): void
@@ -108,51 +117,64 @@ class ApiClientRequestTest extends TestCase
 		$this->assertStringContainsString( 'moneymotion IPS Plugin', $captured['headers']['User-Agent'] );
 	}
 
-	public function testRequestBodyHasJsonWrapper(): void
+	public function testRequestBodyIsEffectRpcEnvelope(): void
 	{
 		$this->client->createCheckoutSession(
 			'Test Desc',
 			array( 'success' => 'https://s', 'cancel' => 'https://c', 'failure' => 'https://f' ),
 			'test@example.com',
-			array(
-				array( 'name' => 'X', 'description' => 'Y', 'pricePerItemInCents' => 1000, 'quantity' => 1 )
-			)
+			array( array( 'name' => 'X', 'description' => 'Y', 'pricePerItemInCents' => 1000, 'quantity' => 1 ) )
 		);
 
-		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
+		$envelope = $this->capturedEnvelope();
 
-		$this->assertArrayHasKey( 'json', $body, 'Request body must have "json" wrapper' );
+		$this->assertSame( 'Request', $envelope['_tag'] );
+		$this->assertSame( '0', $envelope['id'] );
+		$this->assertSame( 'CheckoutSessionsCreateCheckoutSession', $envelope['tag'] );
+		$this->assertArrayHasKey( 'payload', $envelope );
+		$this->assertSame( array(), $envelope['headers'] );
 	}
 
-	public function testRequestIncludesAllRequiredFields(): void
+	public function testRequestBodyHasTrailingNewline(): void
+	{
+		$this->client->createCheckoutSession(
+			'Test',
+			array( 'success' => 'x', 'cancel' => 'x', 'failure' => 'x' ),
+			'test@example.com',
+			array()
+		);
+
+		/* NDJSON framing requires a trailing newline after each message —
+		   the parser on the server uses \n as the record separator. */
+		$body = \IPS\Http\Url\Request::$captured[0]['body'];
+		$this->assertStringEndsWith( "\n", $body );
+	}
+
+	public function testRequestPayloadIncludesAllRequiredFields(): void
 	{
 		$this->client->createCheckoutSession(
 			'Invoice #100',
 			array(
 				'success' => 'https://site.com/success',
-				'cancel' => 'https://site.com/cancel',
+				'cancel'  => 'https://site.com/cancel',
 				'failure' => 'https://site.com/failure',
 			),
 			'customer@example.com',
-			array(
-				array( 'name' => 'Product', 'description' => 'Desc', 'pricePerItemInCents' => 2500, 'quantity' => 2 ),
-			)
+			array( array( 'name' => 'Product', 'description' => 'Desc', 'pricePerItemInCents' => 2500, 'quantity' => 2 ) )
 		);
 
-		$captured = \IPS\Http\Url\Request::$captured[0];
-		$json = json_decode( $captured['body'], true )['json'];
+		$payload = $this->capturedEnvelope()['payload'];
 
-		$this->assertSame( 'Invoice #100', $json['description'] );
-		$this->assertSame( 'https://site.com/success', $json['urls']['success'] );
-		$this->assertSame( 'https://site.com/cancel', $json['urls']['cancel'] );
-		$this->assertSame( 'https://site.com/failure', $json['urls']['failure'] );
-		$this->assertSame( 'customer@example.com', $json['userInfo']['email'] );
-		$this->assertCount( 1, $json['lineItems'] );
-		$this->assertSame( 2500, $json['lineItems'][0]['pricePerItemInCents'] );
+		$this->assertSame( 'Invoice #100', $payload['description'] );
+		$this->assertSame( 'https://site.com/success', $payload['urls']['success'] );
+		$this->assertSame( 'https://site.com/cancel', $payload['urls']['cancel'] );
+		$this->assertSame( 'https://site.com/failure', $payload['urls']['failure'] );
+		$this->assertSame( 'customer@example.com', $payload['userInfo']['email'] );
+		$this->assertCount( 1, $payload['lineItems'] );
+		$this->assertSame( 2500, $payload['lineItems'][0]['pricePerItemInCents'] );
 	}
 
-	public function testEmptyMetadataIsObject(): void
+	public function testEmptyMetadataIsOmitted(): void
 	{
 		$this->client->createCheckoutSession(
 			'Test',
@@ -162,13 +184,14 @@ class ApiClientRequestTest extends TestCase
 			array()
 		);
 
-		$captured = \IPS\Http\Url\Request::$captured[0];
-
-		// Empty metadata must serialize as {} not []
-		$this->assertStringContainsString( '"metadata":{}', $captured['body'] );
+		/* Empty metadata is OMITTED, not sent as {} — the server schema marks
+		   it optional and the PR made this change to avoid sending a noisy
+		   empty object on every call. */
+		$payload = $this->capturedEnvelope()['payload'];
+		$this->assertArrayNotHasKey( 'metadata', $payload );
 	}
 
-	public function testMetadataWithValuesIsObject(): void
+	public function testMetadataWithValuesIsSerializedAsObject(): void
 	{
 		$this->client->createCheckoutSession(
 			'Test',
@@ -178,19 +201,23 @@ class ApiClientRequestTest extends TestCase
 			array( 'invoice_id' => 100, 'transaction_id' => 200 )
 		);
 
-		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
+		$payload = $this->capturedEnvelope()['payload'];
 
-		$this->assertArrayHasKey( 'metadata', $body['json'] );
-		$this->assertSame( 100, $body['json']['metadata']['invoice_id'] );
-		$this->assertSame( 200, $body['json']['metadata']['transaction_id'] );
+		$this->assertArrayHasKey( 'metadata', $payload );
+		$this->assertSame( 100, $payload['metadata']['invoice_id'] );
+		$this->assertSame( 200, $payload['metadata']['transaction_id'] );
+
+		/* Ensure metadata is serialized as a JSON object, not an array — the
+		   server schema expects a Record/Object, and [] would be rejected. */
+		$body = \IPS\Http\Url\Request::$captured[0]['body'];
+		$this->assertStringContainsString( '"metadata":{', $body );
 	}
 
 	public function testSuccessfulResponseReturnsSessionId(): void
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_abc_xyz_123"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_abc_xyz_123"}}}' . "\n"
 		);
 
 		$sessionId = $this->client->createCheckoutSession(
@@ -203,15 +230,19 @@ class ApiClientRequestTest extends TestCase
 		$this->assertSame( 'cs_abc_xyz_123', $sessionId );
 	}
 
-	public function testApiErrorThrowsRuntimeException(): void
+	public function testAuthFailureSurfacesReadableCauseMessage(): void
 	{
+		/* Backend returns HTTP 401 with an Exit/Failure whose Fail cause
+		   carries a human-readable message. rpcCall() must parse the body
+		   BEFORE bailing on the HTTP status so that message reaches the
+		   caller rather than the raw JSON being dumped into the exception. */
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			400,
-			'{"error":"Invalid API Key"}'
+			401,
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Failure","cause":{"_tag":"Fail","error":{"code":"unauthorized","message":"Invalid API key","_tag":"AuthenticationError"}}}}' . "\n"
 		);
 
 		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'Invalid API Key' );
+		$this->expectExceptionMessage( 'Invalid API key' );
 
 		$this->client->createCheckoutSession(
 			'Test',
@@ -221,12 +252,13 @@ class ApiClientRequestTest extends TestCase
 		);
 	}
 
-	public function testNonJsonResponseThrowsException(): void
+	public function testNonNdjsonResponseThrowsException(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response( 200, 'not json' );
+		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response( 200, 'not ndjson' );
 
 		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'Invalid JSON response' );
+		/* The parser finds no Exit message in garbage content. */
+		$this->expectExceptionMessage( 'no Exit message' );
 
 		$this->client->createCheckoutSession(
 			'Test',
@@ -236,14 +268,19 @@ class ApiClientRequestTest extends TestCase
 		);
 	}
 
-	public function testServerErrorThrowsException(): void
+	public function testServerErrorWithoutParseableBodyThrowsViaHttpGuard(): void
 	{
+		/* A 500 with HTML (Cloudflare error page, origin down, etc.) isn't
+		   valid NDJSON — the parser throws, rpcCall() falls back to the
+		   HTTP-status guard and surfaces the status + truncated body. */
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			500,
-			'{"error":"Internal Server Error"}'
+			'<html><body>Internal Server Error</body></html>'
 		);
 
 		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'HTTP 500' );
+
 		$this->client->createCheckoutSession(
 			'Test',
 			array( 'success' => 'x', 'cancel' => 'x', 'failure' => 'x' ),
@@ -267,9 +304,6 @@ class ApiClientRequestTest extends TestCase
 		);
 	}
 
-	/**
-	 * Verify default currency is BRL (per plugin default)
-	 */
 	public function testDefaultCurrencyIsBRL(): void
 	{
 		$this->client->createCheckoutSession(

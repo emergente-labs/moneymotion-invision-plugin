@@ -2,20 +2,18 @@
 /**
  * Tests for API request contract compliance against moneymotion docs.
  *
- * Per https://docs.moneymotion.io/api/checkoutsessions/createCheckoutSession
- * the tRPC-style endpoint requires:
+ * Plugin now uses Effect RPC NDJSON at POST /rpc. The `payload` field inside
+ * the envelope holds the CreateCheckoutSession schema:
  *   - description: string
  *   - urls: { success, cancel, failure } — all three required strings
  *   - userInfo: { email } — required
  *   - lineItems: array of { name, description, pricePerItemInCents > 0, quantity > 0 }
+ *   - metadata: optional object (omitted when empty)
  *
- * And per https://docs.moneymotion.io/create-checkout-session (the REST-style
- * reference docs which describe the business-level contract):
- *   - userIp: string — required for fraud/compliance
- *   - userFingerprint: string — required for device tracking
- *
- * The plugin uses the tRPC format which doesn't require userIp/userFingerprint,
- * but production moneymotion accounts may enforce them at the business layer.
+ * Business-level fields that the plugin does NOT currently send (documenting
+ * gaps with moneymotion's fraud/compliance contract):
+ *   - userIp
+ *   - userFingerprint
  */
 
 namespace Tests\Integration;
@@ -31,7 +29,8 @@ class ApiContractComplianceTest extends TestCase
 		\IPS\Http\Url\Request::reset();
 		$this->client = new \IPS\moneymotion\Api\_Client( 'mk_live_test' );
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_test"}}}}'
+			200,
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_test"}}}' . "\n"
 		);
 	}
 
@@ -47,7 +46,8 @@ class ApiContractComplianceTest extends TestCase
 		);
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		return json_decode( $captured['body'], true )['json'];
+		$envelope = json_decode( rtrim( $captured['body'], "\n" ), true );
+		return $envelope['payload'];
 	}
 
 	public function testRequestHasAllThreeUrls(): void

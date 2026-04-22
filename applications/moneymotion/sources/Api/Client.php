@@ -183,17 +183,30 @@ class _Client
 		$httpCode = (int) $response->httpResponseCode;
 		$content = (string) $response->content;
 
-		if ( $httpCode < 200 || $httpCode >= 300 )
+		/* Effect RPC puts domain-level failures (auth, validation, business
+		   rejection) in the body as Exit/Failure even when the transport
+		   returns a 4xx HTTP status (e.g. 401 for invalid API key). Try to
+		   parse the body first so the readable cause ("Invalid API key",
+		   "Malformed URL", …) reaches the caller. Only fall back to the HTTP
+		   guard if the body isn't valid NDJSON — that covers transport-level
+		   problems like 502/504 gateway errors or Cloudflare HTML pages. */
+		try
 		{
-			throw new \RuntimeException( sprintf(
-				'moneymotion RPC %s returned HTTP %d: %s',
-				$tag,
-				$httpCode,
-				mb_substr( $content, 0, 500 )
-			) );
+			return static::parseRpcExit( $tag, $content );
 		}
-
-		return static::parseRpcExit( $tag, $content );
+		catch ( \RuntimeException $parseError )
+		{
+			if ( $httpCode < 200 || $httpCode >= 300 )
+			{
+				throw new \RuntimeException( sprintf(
+					'moneymotion RPC %s returned HTTP %d: %s',
+					$tag,
+					$httpCode,
+					mb_substr( $content, 0, 500 )
+				) );
+			}
+			throw $parseError;
+		}
 	}
 
 	/**
@@ -406,9 +419,12 @@ class _Client
 				}
 			}
 		}
-		catch ( \Exception $e )
+		catch ( \Throwable $e )
 		{
-			// swallow — `$version` keeps the fallback
+			/* Catch `\Throwable`, not `\Exception`, so that PHP 7+ `\Error`
+			   subclasses (TypeError, missing-method Error, etc.) also fall
+			   back silently. The whole point of this try is that a User-Agent
+			   lookup must never take down a checkout create. */
 		}
 
 		static::$cachedPluginVersion = $version;

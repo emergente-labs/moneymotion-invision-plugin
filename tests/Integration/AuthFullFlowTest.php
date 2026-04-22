@@ -44,7 +44,7 @@ class AuthFullFlowTest extends TestCase
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_abc_123"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_abc_123"}}}' . "\n"
 		);
 
 		try
@@ -58,14 +58,14 @@ class AuthFullFlowTest extends TestCase
 
 		$captured = \IPS\Http\Url\Request::$captured;
 		$this->assertNotEmpty( $captured, 'API call should have been made' );
-		$this->assertStringContainsString( 'createCheckoutSession', $captured[0]['url'] );
+		$this->assertStringEndsWith( '/rpc', $captured[0]['url'] );
 	}
 
 	public function testAuthStoresSessionInDb(): void
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_stored_test"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_stored_test"}}}' . "\n"
 		);
 
 		try
@@ -89,7 +89,7 @@ class AuthFullFlowTest extends TestCase
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_new"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_new"}}}' . "\n"
 		);
 
 		try
@@ -107,7 +107,7 @@ class AuthFullFlowTest extends TestCase
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_on_txn"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_on_txn"}}}' . "\n"
 		);
 
 		try
@@ -124,7 +124,7 @@ class AuthFullFlowTest extends TestCase
 		// $25.00 → 2500 cents
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_test"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_test"}}}' . "\n"
 		);
 
 		try
@@ -134,15 +134,15 @@ class AuthFullFlowTest extends TestCase
 		catch ( \Exception $e ) {}
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
-		$this->assertSame( 2500, $body['json']['lineItems'][0]['pricePerItemInCents'] );
+		$body = json_decode( rtrim($captured['body'], "\n"), true );
+		$this->assertSame( 2500, $body['payload']['lineItems'][0]['pricePerItemInCents'] );
 	}
 
 	public function testAuthIncludesMetadataWithInvoiceAndTransactionIds(): void
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_test"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_test"}}}' . "\n"
 		);
 
 		try
@@ -152,8 +152,8 @@ class AuthFullFlowTest extends TestCase
 		catch ( \Exception $e ) {}
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
-		$metadata = $body['json']['metadata'];
+		$body = json_decode( rtrim($captured['body'], "\n"), true );
+		$metadata = $body['payload']['metadata'];
 
 		$this->assertSame( 100, $metadata['transaction_id'] );
 		$this->assertSame( 1, $metadata['gateway_id'] );
@@ -164,7 +164,7 @@ class AuthFullFlowTest extends TestCase
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_test"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_test"}}}' . "\n"
 		);
 
 		try
@@ -174,8 +174,8 @@ class AuthFullFlowTest extends TestCase
 		catch ( \Exception $e ) {}
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
-		$urls = $body['json']['urls'];
+		$body = json_decode( rtrim($captured['body'], "\n"), true );
+		$urls = $body['payload']['urls'];
 
 		$this->assertStringContainsString( 'csrf_token=', $urls['success'] );
 		$this->assertStringContainsString( 'csrf_token=', $urls['cancel'] );
@@ -186,7 +186,7 @@ class AuthFullFlowTest extends TestCase
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_test"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_test"}}}' . "\n"
 		);
 
 		try
@@ -196,8 +196,8 @@ class AuthFullFlowTest extends TestCase
 		catch ( \Exception $e ) {}
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
-		$urls = $body['json']['urls'];
+		$body = json_decode( rtrim($captured['body'], "\n"), true );
+		$urls = $body['payload']['urls'];
 
 		$this->assertStringStartsWith( 'https://', $urls['success'] );
 		$this->assertStringStartsWith( 'https://', $urls['cancel'] );
@@ -206,9 +206,13 @@ class AuthFullFlowTest extends TestCase
 
 	public function testAuthApiFailureThrowsLogicException(): void
 	{
+		/* Backend returns HTTP 401 for invalid API key with the readable
+		   message inside Exit/Failure/Fail. The client surfaces that as a
+		   RuntimeException, the gateway catches it and rethrows as
+		   LogicException with a translated user-facing message. */
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			400,
-			'{"error":"Invalid API Key"}'
+			401,
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Failure","cause":{"_tag":"Fail","error":{"code":"unauthorized","message":"Invalid API key","_tag":"AuthenticationError"}}}}' . "\n"
 		);
 
 		$this->expectException( \LogicException::class );
@@ -219,7 +223,7 @@ class AuthFullFlowTest extends TestCase
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			500,
-			'{"error":"Internal Server Error"}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Failure","cause":{"_tag":"Die","defect":{"message":"Internal Server Error"}}}}' . "\n"
 		);
 
 		try
@@ -238,7 +242,7 @@ class AuthFullFlowTest extends TestCase
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_logged"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_logged"}}}' . "\n"
 		);
 
 		try
@@ -257,7 +261,7 @@ class AuthFullFlowTest extends TestCase
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_logged"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_logged"}}}' . "\n"
 		);
 
 		try
@@ -276,7 +280,7 @@ class AuthFullFlowTest extends TestCase
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_logged"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_logged"}}}' . "\n"
 		);
 
 		try
@@ -297,7 +301,7 @@ class AuthFullFlowTest extends TestCase
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_large"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_large"}}}' . "\n"
 		);
 
 		try
@@ -307,8 +311,8 @@ class AuthFullFlowTest extends TestCase
 		catch ( \Exception $e ) {}
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
-		$this->assertSame( 999999, $body['json']['lineItems'][0]['pricePerItemInCents'] );
+		$body = json_decode( rtrim($captured['body'], "\n"), true );
+		$this->assertSame( 999999, $body['payload']['lineItems'][0]['pricePerItemInCents'] );
 	}
 
 	public function testAuthHandlesSmallAmounts(): void
@@ -317,7 +321,7 @@ class AuthFullFlowTest extends TestCase
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_small"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_small"}}}' . "\n"
 		);
 
 		try
@@ -327,8 +331,8 @@ class AuthFullFlowTest extends TestCase
 		catch ( \Exception $e ) {}
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
-		$this->assertSame( 1, $body['json']['lineItems'][0]['pricePerItemInCents'] );
+		$body = json_decode( rtrim($captured['body'], "\n"), true );
+		$this->assertSame( 1, $body['payload']['lineItems'][0]['pricePerItemInCents'] );
 	}
 
 	public function testAuthPassesCurrencyHeaderToApi(): void
@@ -337,7 +341,7 @@ class AuthFullFlowTest extends TestCase
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_brl"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_brl"}}}' . "\n"
 		);
 
 		try
@@ -360,7 +364,7 @@ class AuthFullFlowTest extends TestCase
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_newtxn"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_newtxn"}}}' . "\n"
 		);
 
 		try

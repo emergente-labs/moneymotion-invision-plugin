@@ -98,7 +98,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 	 * @param string $type 'auth' or 'pay'
 	 * @return string
 	 */
-	public function paymentScreen( \IPS\nexus\Invoice $invoice, \IPS\nexus\Money $amount, \IPS\nexus\Customer $member = NULL, $recurrings = array(), $type = 'checkout' )
+	public function paymentScreen( \IPS\nexus\Invoice $invoice, \IPS\nexus\Money $amount, ?\IPS\nexus\Customer $member = NULL, $recurrings = array(), $type = 'checkout' )
 	{
 		return \IPS\Theme::i()->getTemplate( 'gateway', 'moneymotion', 'front' )->paymentScreen( $this, $invoice, $amount );
 	}
@@ -115,7 +115,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 	 * @throws \LogicException Message is displayed to the user
 	 * @throws \RuntimeException Message is logged
 	 */
-	public function auth( \IPS\nexus\Transaction $transaction, $values, \IPS\nexus\Fraud\MaxMind\Request $maxMind = NULL, $recurrings = array(), $source = NULL )
+	public function auth( \IPS\nexus\Transaction $transaction, $values, ?\IPS\nexus\Fraud\MaxMind\Request $maxMind = NULL, $recurrings = array(), $source = NULL )
 	{
 		/* Load invoice */
 		$invoice = $transaction->invoice;

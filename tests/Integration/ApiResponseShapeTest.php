@@ -1,11 +1,12 @@
 <?php
 /**
- * Tests for API response shape robustness
+ * Tests for API response shape robustness (Effect RPC / NDJSON).
  *
- * The client hardcodes the path `result.data.json.checkoutSessionId`. If
- * moneymotion's response shape ever changes (or an error response comes
- * back where we expected success), the plugin should fail with a clear
- * exception, not a fatal PHP warning that would surface to the customer.
+ * The client parses Effect RPC NDJSON responses — each line is a JSON message,
+ * the terminal one is `{"_tag":"Exit","exit":{...}}` carrying either a Success
+ * value or a Failure cause. If the backend returns something else (malformed
+ * NDJSON, HTML error pages, empty bodies), the plugin must fail with a clear
+ * exception rather than a fatal PHP warning reaching the customer.
  */
 
 namespace Tests\Integration;
@@ -32,55 +33,64 @@ class ApiResponseShapeTest extends TestCase
 		);
 	}
 
-	public function testResponseMissingResultKeyHandled(): void
+	/**
+	 * Helper — mock a 200 response carrying a raw body. Caller provides the
+	 * exact NDJSON bytes to simulate each malformed-response scenario.
+	 */
+	private function mockResponse( int $status, string $body ): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200,
-			'{"data":{"json":{"checkoutSessionId":"cs_abc"}}}' // No 'result' wrapper
-		);
+		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response( $status, $body );
+	}
 
-		$this->expectException( \Throwable::class );
+	public function testResponseWithoutExitMessageThrows(): void
+	{
+		/* Server sends NDJSON but never emits an Exit — parser can't extract
+		   a result. */
+		$this->mockResponse( 200, '{"_tag":"Request","id":"0","tag":"Foo","payload":{},"headers":[]}' . "\n" );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'no Exit message' );
 		$this->callCheckout();
 	}
 
-	public function testResponseMissingDataKeyHandled(): void
+	public function testCompletelyEmptyResponseThrows(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200,
-			'{"result":{"json":{"checkoutSessionId":"cs_abc"}}}' // No 'data' level
-		);
+		$this->mockResponse( 200, '' );
 
-		$this->expectException( \Throwable::class );
+		$this->expectException( \RuntimeException::class );
 		$this->callCheckout();
 	}
 
-	public function testResponseMissingJsonKeyHandled(): void
+	public function testExitSuccessMissingCheckoutSessionIdThrows(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
+		/* Success value exists but doesn't carry the key the caller expects. */
+		$this->mockResponse(
 			200,
-			'{"result":{"data":{"checkoutSessionId":"cs_abc"}}}' // No 'json' level
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{}}}' . "\n"
 		);
 
-		$this->expectException( \Throwable::class );
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'checkoutSessionId' );
 		$this->callCheckout();
 	}
 
-	public function testResponseMissingCheckoutSessionIdHandled(): void
+	public function testExitSuccessWithNullCheckoutSessionIdThrows(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
+		$this->mockResponse(
 			200,
-			'{"result":{"data":{"json":{}}}}' // No 'checkoutSessionId'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":null}}}' . "\n"
 		);
 
-		$this->expectException( \Throwable::class );
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'checkoutSessionId' );
 		$this->callCheckout();
 	}
 
-	public function testResponseWithNullCheckoutSessionIdThrows(): void
+	public function testExitSuccessWithEmptyCheckoutSessionIdThrows(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
+		$this->mockResponse(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":null}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":""}}}' . "\n"
 		);
 
 		$this->expectException( \RuntimeException::class );
@@ -88,11 +98,11 @@ class ApiResponseShapeTest extends TestCase
 		$this->callCheckout();
 	}
 
-	public function testResponseWithEmptyCheckoutSessionIdThrows(): void
+	public function testExitSuccessWithWhitespaceOnlyCheckoutSessionIdThrows(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
+		$this->mockResponse(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":""}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"   "}}}' . "\n"
 		);
 
 		$this->expectException( \RuntimeException::class );
@@ -100,31 +110,57 @@ class ApiResponseShapeTest extends TestCase
 		$this->callCheckout();
 	}
 
-	public function testResponseWithWhitespaceOnlyCheckoutSessionIdThrows(): void
+	public function testExitFailureFailCauseSurfacesReadableMessage(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"   "}}}}'
+		/* Domain-level failure (validation, business rejection). The backend
+		   may return 200 or 4xx — rpcCall() parses the body either way and
+		   extracts the Fail cause's error.message for the exception. */
+		$this->mockResponse(
+			422,
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Failure","cause":{"_tag":"Fail","error":{"code":"validation","message":"Line item price must be positive","_tag":"ValidationError"}}}}' . "\n"
 		);
 
 		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'empty checkoutSessionId' );
+		$this->expectExceptionMessage( 'Line item price must be positive' );
 		$this->callCheckout();
 	}
 
-	public function testCompletelyEmptyResponseHandled(): void
+	public function testExitFailureDieCauseSurfacesReadableMessage(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response( 200, '{}' );
+		/* An Effect Die cause wraps a defect — the plugin extracts the
+		   defect message when it's a string or { message: "..." }. */
+		$this->mockResponse(
+			500,
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Failure","cause":{"_tag":"Die","defect":{"message":"database connection lost"}}}}' . "\n"
+		);
 
-		$this->expectException( \Throwable::class );
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'database connection lost' );
 		$this->callCheckout();
 	}
 
-	public function testRateLimitResponse429Handled(): void
+	public function testDefectMessageIsSurfaced(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
+		/* A top-level Defect message (as opposed to Exit/Failure/Die) means
+		   the server-side parser bombed before even producing an Exit. */
+		$this->mockResponse(
+			500,
+			'{"_tag":"Defect","defect":"Malformed request envelope"}' . "\n"
+		);
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'defect' );
+		$this->callCheckout();
+	}
+
+	public function testRateLimitResponse429WithExitFailureSurfacesMessage(): void
+	{
+		/* Modern Effect RPC backends wrap rate-limit rejections in Exit/Fail
+		   too — the plugin should surface "Rate limit exceeded" rather than
+		   "HTTP 429: {...raw body...}". */
+		$this->mockResponse(
 			429,
-			'{"error":"Rate limit exceeded"}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Failure","cause":{"_tag":"Fail","error":{"code":"rate_limited","message":"Rate limit exceeded","_tag":"RateLimitError"}}}}' . "\n"
 		);
 
 		$this->expectException( \RuntimeException::class );
@@ -132,40 +168,25 @@ class ApiResponseShapeTest extends TestCase
 		$this->callCheckout();
 	}
 
-	public function testGatewayTimeout504Handled(): void
+	public function testGatewayTimeout504WithoutParseableBodyFallsBackToHttpGuard(): void
 	{
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			504,
-			'{"error":"Gateway timeout"}'
-		);
+		/* Transport-level failure: no valid NDJSON in the body. rpcCall()
+		   tries parseRpcExit(), that throws, then the HTTP-status guard
+		   fires and surfaces the status code + truncated body. */
+		$this->mockResponse( 504, 'Gateway Timeout' );
 
 		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'HTTP 504' );
 		$this->callCheckout();
 	}
 
-	public function testCloudflareErrorPageHandled(): void
+	public function testCloudflareErrorPageFallsBackToHttpGuard(): void
 	{
-		/* CF/cloudfront error pages return HTML, not JSON */
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			502,
-			'<html><body><h1>502 Bad Gateway</h1></body></html>'
-		);
+		/* Cloudflare/CDN HTML error pages can't be parsed as NDJSON. */
+		$this->mockResponse( 502, '<html><body><h1>502 Bad Gateway</h1></body></html>' );
 
 		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'Invalid JSON response' );
-		$this->callCheckout();
-	}
-
-	public function testResponseWith200ButErrorBodyHandled(): void
-	{
-		/* Some APIs return 200 OK with an error in the body. We should
-		   catch this — but currently the code just reads checkoutSessionId. */
-		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200,
-			'{"error":"Something went wrong"}'
-		);
-
-		$this->expectException( \Throwable::class );
+		$this->expectExceptionMessage( 'HTTP 502' );
 		$this->callCheckout();
 	}
 }

@@ -17,9 +17,26 @@ if ( !\defined( '\IPS\SUITE_UNIQUE_KEY' ) )
 /* ---------- \IPS\Application ---------- */
 class Application
 {
+	/** @var string Version returned by load() — tests can override via Application::$stubVersion */
+	public static $stubVersion = '3.0.18';
+
+	public $version;
+
 	public static function appIsEnabled( $app )
 	{
 		return true;
+	}
+
+	/**
+	 * Stub of \IPS\Application::load() used by Client::pluginVersion() when
+	 * building the User-Agent. Returns a row-like object with ->version so the
+	 * lookup succeeds and tests can assert on the realistic UA string.
+	 */
+	public static function load( $id )
+	{
+		$app = new self;
+		$app->version = static::$stubVersion;
+		return $app;
 	}
 }
 
@@ -418,17 +435,13 @@ class Request
 			return static::$nextResponse;
 		}
 
-		return new \IPS\Http\Response( 200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_mocked"}}}}' );
-	}
-
-	public function get()
-	{
-		static::$captured[] = array(
-			'method'  => 'GET',
-			'url'     => $this->url,
-			'headers' => $this->headers,
+		/* Default response mirrors the Effect RPC NDJSON wire format used by
+		   POST /rpc — one JSON object per line, terminal Exit/Success carries
+		   the value. Tests that need a specific shape override via $nextResponse. */
+		return new \IPS\Http\Response(
+			200,
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_mocked"}}}' . "\n"
 		);
-		return static::$nextResponse ?: new \IPS\Http\Response( 200, '{}' );
 	}
 
 	public static function reset()

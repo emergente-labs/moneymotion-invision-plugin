@@ -52,7 +52,7 @@ class AuthErrorPathsTest extends TestCase
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_recovered"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_recovered"}}}' . "\n"
 		);
 
 		try
@@ -86,7 +86,7 @@ class AuthErrorPathsTest extends TestCase
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
 			200,
-			'{"result":{"data":{"json":{"checkoutSessionId":"cs_mismatch"}}}}'
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_mismatch"}}}' . "\n"
 		);
 
 		try

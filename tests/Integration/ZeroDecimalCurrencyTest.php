@@ -68,15 +68,15 @@ class ZeroDecimalCurrencyTest extends TestCase
 		\IPS\nexus\Transaction::register( 100, $txn );
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_test"}}}}'
+			200, '{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_test"}}}' . "\n"
 		);
 
 		try { $this->gateway->auth( $txn, array() ); }
 		catch ( \Exception $e ) { /* redirect */ }
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
-		$sent = $body['json']['lineItems'][0]['pricePerItemInCents'];
+		$body = json_decode( rtrim($captured['body'], "\n"), true );
+		$sent = $body['payload']['lineItems'][0]['pricePerItemInCents'];
 
 		$expected = (int) $amount; // for zero-decimal currencies, the minor unit IS the major unit
 
@@ -96,7 +96,7 @@ class ZeroDecimalCurrencyTest extends TestCase
 		\IPS\nexus\Transaction::register( 100, $txn );
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_jpy"}}}}'
+			200, '{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_jpy"}}}' . "\n"
 		);
 
 		try { $this->gateway->auth( $txn, array() ); }
@@ -124,15 +124,15 @@ class ZeroDecimalCurrencyTest extends TestCase
 		\IPS\nexus\Transaction::register( 100, $txn );
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_eur"}}}}'
+			200, '{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_eur"}}}' . "\n"
 		);
 
 		try { $this->gateway->auth( $txn, array() ); }
 		catch ( \Exception $e ) {}
 
 		$captured = \IPS\Http\Url\Request::$captured[0];
-		$body = json_decode( $captured['body'], true );
+		$body = json_decode( rtrim($captured['body'], "\n"), true );
 
-		$this->assertSame( 1000, $body['json']['lineItems'][0]['pricePerItemInCents'] );
+		$this->assertSame( 1000, $body['payload']['lineItems'][0]['pricePerItemInCents'] );
 	}
 }

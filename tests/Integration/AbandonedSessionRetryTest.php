@@ -50,12 +50,12 @@ class AbandonedSessionRetryTest extends TestCase
 	public function testRetryDeletesOldSessionBeforeNewInsert(): void
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_first"}}}}'
+			200, '{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_first"}}}' . "\n"
 		);
 		try { $this->gateway->auth( $this->txn, array() ); } catch ( \Exception $e ) {}
 
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_second"}}}}'
+			200, '{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_second"}}}' . "\n"
 		);
 		try { $this->gateway->auth( $this->txn, array() ); } catch ( \Exception $e ) {}
 
@@ -99,7 +99,7 @@ class AbandonedSessionRetryTest extends TestCase
 	public function testMaxMindParameterIsAcceptedButUnused(): void
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_x"}}}}'
+			200, '{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_x"}}}' . "\n"
 		);
 
 		$mm = new \IPS\nexus\Fraud\MaxMind\Request;
@@ -123,7 +123,7 @@ class AbandonedSessionRetryTest extends TestCase
 	public function testRecurringsParameterHandledGracefully(): void
 	{
 		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
-			200, '{"result":{"data":{"json":{"checkoutSessionId":"cs_x"}}}}'
+			200, '{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_x"}}}' . "\n"
 		);
 
 		$recurrings = array(
