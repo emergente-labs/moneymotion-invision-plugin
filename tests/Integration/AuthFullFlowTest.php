@@ -354,6 +354,59 @@ class AuthFullFlowTest extends TestCase
 		$this->assertSame( 'BRL', $captured['headers']['x-currency'] );
 	}
 
+	public function testAuthThrowsLogicExceptionWhenGuestHasNoEmail(): void
+	{
+		/* Simulate a guest checkout: member_id is 0 and ->email is empty.
+		   Also blank out the loggedIn fallback so the resolver can't find
+		   an email anywhere. */
+		$this->transaction->member = new \IPS\Member;
+		$this->transaction->member->member_id = 0;
+		$this->transaction->member->email = '';
+		\IPS\Member::loggedIn()->email = '';
+
+		$this->expectException( \LogicException::class );
+
+		try
+		{
+			$this->gateway->auth( $this->transaction, array() );
+		}
+		finally
+		{
+			$this->assertTrue(
+				\IPS\Log::hasMessageContaining( 'missing/invalid customer email' ),
+				'Missing-email path should be logged before throwing'
+			);
+			$this->assertEmpty(
+				\IPS\Http\Url\Request::$captured,
+				'Should not call the moneymotion API when email is missing'
+			);
+		}
+	}
+
+	public function testAuthUsesGuestDataEmailWhenMemberEmailEmpty(): void
+	{
+		/* Guest checkout with email stored on invoice->guest_data (IPS Commerce shape). */
+		$this->transaction->member = new \IPS\Member;
+		$this->transaction->member->member_id = 0;
+		$this->transaction->member->email = '';
+		$this->transaction->invoice->guest_data = array( 'member' => array( 'email' => 'guest@example.com' ) );
+
+		\IPS\Http\Url\Request::$nextResponse = new \IPS\Http\Response(
+			200,
+			'{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":{"checkoutSessionId":"cs_guest_ok"}}}' . "\n"
+		);
+
+		try
+		{
+			$this->gateway->auth( $this->transaction, array() );
+		}
+		catch ( \Exception $e ) {}
+
+		$this->assertNotEmpty( \IPS\Http\Url\Request::$captured, 'API should be called when guest email is resolvable' );
+		$body = \IPS\Http\Url\Request::$captured[0]['body'];
+		$this->assertStringContainsString( 'guest@example.com', $body, 'Resolved guest email should be sent in RPC payload' );
+	}
+
 	public function testAuthSavesTransactionIfMissingId(): void
 	{
 		// Create a transaction without ID

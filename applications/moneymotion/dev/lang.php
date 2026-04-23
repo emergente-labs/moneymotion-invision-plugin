@@ -23,6 +23,7 @@ $lang = array(
 
 	// Errors
 	'moneymotion_error_api'				=> "Could not connect to moneymotion. Please try again later.",
+	'moneymotion_error_email'			=> "A valid email address is required to start payment. Please re-check your billing details and try again.",
 	'moneymotion_error_invalid_signature'	=> "Invalid webhook signature.",
 	'moneymotion_error_session_not_found'	=> "Checkout session not found.",
 
