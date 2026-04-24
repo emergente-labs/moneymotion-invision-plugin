@@ -1,0 +1,77 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phpunit:
+    name: PHPUnit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.1 is IPS 4.7.20's minimum; 8.2/8.3 verify forward compat
+        php: ['8.1', '8.2', '8.3']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, xml, dom, tokenizer, json
+          coverage: none
+          tools: composer:v2
+
+      - name: Validate composer.json
+        run: composer validate --strict --no-check-publish
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ runner.os }}-php${{ matrix.php }}-${{ hashFiles('composer.json') }}
+          restore-keys: composer-${{ runner.os }}-php${{ matrix.php }}-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Run PHPUnit
+        run: vendor/bin/phpunit --testdox
+
+      - name: Run PHPUnit with coverage on PHP 8.1
+        if: matrix.php == '8.1'
+        run: |
+          # Install coverage driver
+          sudo phpenmod -v ${{ matrix.php }} pcov || true
+          vendor/bin/phpunit --coverage-text --coverage-clover=coverage.xml || vendor/bin/phpunit
+
+  syntax-check:
+    name: PHP lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - name: Lint plugin PHP files
+        run: |
+          find applications/moneymotion -name "*.php" -print0 | xargs -0 -n1 -P4 php -l

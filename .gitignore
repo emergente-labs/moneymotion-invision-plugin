@@ -2,3 +2,7 @@
 /ips_4.7.20
 /mysql_data
 /standalone
+/vendor
+/composer
+/.phpunit.cache
+/PAYMENT-FLOW.md

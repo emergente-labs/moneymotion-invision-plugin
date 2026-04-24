@@ -98,7 +98,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 	 * @param string $type 'auth' or 'pay'
 	 * @return string
 	 */
-	public function paymentScreen( \IPS\nexus\Invoice $invoice, \IPS\nexus\Money $amount, \IPS\nexus\Customer $member = NULL, $recurrings = array(), $type = 'checkout' )
+	public function paymentScreen( \IPS\nexus\Invoice $invoice, \IPS\nexus\Money $amount, ?\IPS\nexus\Customer $member = NULL, $recurrings = array(), $type = 'checkout' )
 	{
 		return \IPS\Theme::i()->getTemplate( 'gateway', 'moneymotion', 'front' )->paymentScreen( $this, $invoice, $amount );
 	}
@@ -115,7 +115,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 	 * @throws \LogicException Message is displayed to the user
 	 * @throws \RuntimeException Message is logged
 	 */
-	public function auth( \IPS\nexus\Transaction $transaction, $values, \IPS\nexus\Fraud\MaxMind\Request $maxMind = NULL, $recurrings = array(), $source = NULL )
+	public function auth( \IPS\nexus\Transaction $transaction, $values, ?\IPS\nexus\Fraud\MaxMind\Request $maxMind = NULL, $recurrings = array(), $source = NULL )
 	{
 		/* Load invoice */
 		$invoice = $transaction->invoice;
@@ -161,8 +161,20 @@ class _moneymotion extends \IPS\nexus\Gateway
 
 		/* Build a single line item using the already-discounted transaction total.
 		   IPS computes $transaction->amount after applying coupons, renewal discounts,
-		   and taxes — matching how Stripe and other IPS gateways handle it. */
-		$totalCents = (int) round( (float) (string) $amount->amount * 100 );
+		   and taxes — matching how Stripe and other IPS gateways handle it.
+
+		   Locale-safe conversion: PHP's (float) cast depends on the active locale,
+		   so "10,50" (comma-decimal locales) would become 10.0 and lose cents.
+		   We normalize the decimal separator to a period first.
+
+		   Currency-aware minor-unit conversion: most currencies have 2 decimals
+		   and multiply by 100, but zero-decimal currencies (JPY, KRW, HUF, CLP, VND,
+		   ISK, UGX, XOF, XAF, etc.) are quoted in whole units. Multiplying a ¥500
+		   charge by 100 would bill the customer ¥50,000. */
+		$amountString = (string) $amount->amount;
+		$amountString = str_replace( ',', '.', $amountString );
+		$multiplier = self::currencyMinorUnitMultiplier( (string) $amount->currency );
+		$totalCents = (int) round( (float) $amountString * $multiplier );
 		$lineItems = array(
 			array(
 				'name'					=> $invoice->title ?: "Invoice #{$invoice->id}",
@@ -184,8 +196,23 @@ class _moneymotion extends \IPS\nexus\Gateway
 			'failure'	=> str_replace( 'http://', 'https://', (string) \IPS\Http\Url::internal( "app=moneymotion&module=gateway&controller=webhook&do=failure&t={$transaction->id}&csrf_token={$csrfTokenFailure}", 'front' ) ),
 		);
 
-		/* Get customer email */
-		$email = $transaction->member->email;
+		/* Get customer email.
+		   For logged-in members, $transaction->member->email is set. For guest
+		   checkouts, the Commerce flow stores the email on the invoice under
+		   i_guest_data (JSON) — $transaction->member->email will be empty in
+		   that case. The Effect RPC backend validates email against a strict
+		   regex and returns HTTP 500 (Die) when the value is missing/invalid,
+		   which surfaces to the customer as "Could not connect to moneymotion".
+		   Resolve from every known source, then validate before we call out. */
+		$email = $this->resolveCustomerEmail( $transaction, $invoice );
+		if ( $email === '' || ! filter_var( $email, FILTER_VALIDATE_EMAIL ) )
+		{
+			\IPS\Log::log(
+				"moneymotion: missing/invalid customer email - transaction_id: {$transaction->id}, invoice_id: {$invoice->id}, member_id: {$transaction->member->member_id}, email_value: " . var_export( $email, TRUE ),
+				'moneymotion'
+			);
+			throw new \LogicException( \IPS\Member::loggedIn()->language()->addToStack( 'moneymotion_error_email' ) );
+		}
 
 		/* Metadata to link back to IPS */
 		$metadata = array(
@@ -207,7 +234,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 				$amount->currency
 			);
 
-			\IPS\Log::log( "moneymotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: " . (int) round( (float) (string) $amount->amount * 100 ), 'moneymotion' );
+			\IPS\Log::log( "moneymotion: checkout session created - session_id: {$sessionId}, transaction_id: {$transaction->id}, amount_cents: {$totalCents}", 'moneymotion' );
 		}
 		catch ( \Exception $e )
 		{
@@ -221,7 +248,7 @@ class _moneymotion extends \IPS\nexus\Gateway
 			'session_id'	=> $sessionId,
 			'transaction_id'	=> (int) $transaction->id,
 			'invoice_id'	=> $invoice->id,
-			'amount_cents'	=> (int) round( (float) (string) $amount->amount * 100 ),
+			'amount_cents'	=> $totalCents,
 			'currency'		=> $amount->currency,
 			'status'		=> 'pending',
 			'created_at'	=> time(),
@@ -284,6 +311,77 @@ class _moneymotion extends \IPS\nexus\Gateway
 		return '';
 	}
 
+	/* !Helpers */
+
+	/**
+	 * Resolve the customer's email for the checkout session.
+	 *
+	 * Checks, in order:
+	 *   1. $transaction->member->email              (logged-in member)
+	 *   2. $invoice->guest_data['member']['email']  (guest checkout, IPS Commerce)
+	 *   3. $invoice->guest_data['email']            (older shape seen in the wild)
+	 *   4. \IPS\Member::loggedIn()->email           (last-resort fallback)
+	 *
+	 * Returns '' if nothing usable is found — caller is responsible for
+	 * validating the format.
+	 *
+	 * @param \IPS\nexus\Transaction $transaction
+	 * @param \IPS\nexus\Invoice     $invoice
+	 * @return string
+	 */
+	protected function resolveCustomerEmail( \IPS\nexus\Transaction $transaction, \IPS\nexus\Invoice $invoice )
+	{
+		$email = isset( $transaction->member->email ) ? trim( (string) $transaction->member->email ) : '';
+		if ( $email !== '' )
+		{
+			return $email;
+		}
+
+		/* Guest checkout: invoice->guest_data is stored as JSON on i_guest_data
+		   and may be either already decoded to an array or still a string. */
+		$guestData = isset( $invoice->guest_data ) ? $invoice->guest_data : NULL;
+		if ( \is_string( $guestData ) && $guestData !== '' )
+		{
+			$decoded = json_decode( $guestData, TRUE );
+			if ( \is_array( $decoded ) )
+			{
+				$guestData = $decoded;
+			}
+		}
+
+		if ( \is_array( $guestData ) )
+		{
+			if ( isset( $guestData['member']['email'] ) && \is_string( $guestData['member']['email'] ) )
+			{
+				$email = trim( $guestData['member']['email'] );
+				if ( $email !== '' )
+				{
+					return $email;
+				}
+			}
+			if ( isset( $guestData['email'] ) && \is_string( $guestData['email'] ) )
+			{
+				$email = trim( $guestData['email'] );
+				if ( $email !== '' )
+				{
+					return $email;
+				}
+			}
+		}
+
+		$loggedIn = \IPS\Member::loggedIn();
+		if ( isset( $loggedIn->email ) && \is_string( $loggedIn->email ) )
+		{
+			$email = trim( $loggedIn->email );
+			if ( $email !== '' )
+			{
+				return $email;
+			}
+		}
+
+		return '';
+	}
+
 	/* !Security Helpers */
 
 	/**
@@ -298,5 +396,41 @@ class _moneymotion extends \IPS\nexus\Gateway
 		$member = \IPS\Member::loggedIn();
 		$data = "{$transactionId}:{$action}:{$member->member_id}:" . \IPS\Settings::i()->cookie_login_key;
 		return hash_hmac( 'sha256', $data, \IPS\Settings::i()->cookie_login_key );
+	}
+
+	/**
+	 * Return the ISO 4217 minor-unit multiplier for a currency.
+	 *
+	 * For most currencies (USD, EUR, GBP, BRL, …) this is 100. For
+	 * zero-decimal currencies — quoted in whole units — this is 1.
+	 *
+	 * List: https://en.wikipedia.org/wiki/ISO_4217#Minor_units
+	 *
+	 * @param string $currency ISO 4217 code (case-insensitive)
+	 * @return int 1, 100, or 1000
+	 */
+	protected static function currencyMinorUnitMultiplier( $currency )
+	{
+		$c = strtoupper( (string) $currency );
+
+		/* 0-decimal currencies — multiply by 1 */
+		static $zeroDecimal = array(
+			'BIF', 'CLP', 'DJF', 'GNF', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG',
+			'RWF', 'UGX', 'UYI', 'VND', 'VUV', 'XAF', 'XOF', 'XPF', 'HUF',
+		);
+		if ( \in_array( $c, $zeroDecimal, TRUE ) )
+		{
+			return 1;
+		}
+
+		/* 3-decimal currencies — multiply by 1000 */
+		static $threeDecimal = array( 'BHD', 'IQD', 'JOD', 'KWD', 'LYD', 'OMR', 'TND' );
+		if ( \in_array( $c, $threeDecimal, TRUE ) )
+		{
+			return 1000;
+		}
+
+		/* Default: 2-decimal (USD, EUR, GBP, BRL, etc.) */
+		return 100;
 	}
 }

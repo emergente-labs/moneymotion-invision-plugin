@@ -1,0 +1,22 @@
+{
+    "name": "moneymotion/ips-plugin",
+    "description": "moneymotion Payment Gateway for Invision Community",
+    "type": "project",
+    "license": "proprietary",
+    "require-dev": {
+        "phpunit/phpunit": "^10.5"
+    },
+    "autoload": {
+        "classmap": [
+            "applications/moneymotion/"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

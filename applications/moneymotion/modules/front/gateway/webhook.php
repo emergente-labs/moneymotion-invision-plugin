@@ -50,11 +50,16 @@ class _webhook extends \IPS\Dispatcher\Controller
 			return;
 		}
 
-		/* Validate timestamp to prevent replay attacks (5 minute window) */
+		/* Optional replay protection via payload timestamp.
+		   moneymotion's current webhook schema does NOT include a timestamp
+		   field, so this check is currently dormant. If a future payload adds
+		   one (unix seconds or milliseconds), we'll reject events older than
+		   5 minutes to prevent replay attacks. */
 		$timestamp = isset( $payload['timestamp'] ) ? (int) $payload['timestamp'] : 0;
 
 		if ( $timestamp > 2000000000 )
 		{
+			/* Looks like milliseconds — normalize to seconds */
 			$timestamp = (int) floor( $timestamp / 1000 );
 		}
 
@@ -64,7 +69,10 @@ class _webhook extends \IPS\Dispatcher\Controller
 			if ( abs( $currentTime - $timestamp ) > 300 )
 			{
 				\IPS\Log::log( "moneymotion webhook: timestamp validation failed (event timestamp: {$timestamp}, current: {$currentTime})", 'moneymotion' );
-				\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Webhook timestamp too old' ) ), 401, 'application/json' );
+				/* 400 Bad Request — the payload is semantically invalid (stale).
+				   Not 401: this is not an authentication problem. Webhook senders
+				   should stop retrying on 4xx, which is the behavior we want here. */
+				\IPS\Output::i()->sendOutput( json_encode( array( 'error' => 'Webhook timestamp too old' ) ), 400, 'application/json' );
 				return;
 			}
 		}
@@ -179,6 +187,22 @@ class _webhook extends \IPS\Dispatcher\Controller
 			return;
 		}
 
+		/* Atomic claim — flip 'pending' → 'processing' only if it's still
+		   'pending'. If another webhook (e.g. moneymotion retry) is racing us,
+		   only one will win the claim; the other sees affected_rows = 0 and
+		   bails out. This is the lock-free equivalent of SELECT … FOR UPDATE. */
+		$affected = \IPS\Db::i()->update(
+			'moneymotion_sessions',
+			array( 'status' => 'processing', 'updated_at' => time() ),
+			array( "session_id=? AND status='pending'", $sessionId )
+		);
+
+		if ( !$affected )
+		{
+			\IPS\Log::log( "moneymotion webhook: session {$sessionId} not claimable (concurrent webhook raced us, or status already moved)", 'moneymotion' );
+			return;
+		}
+
 		/* Load the IPS transaction */
 		try
 		{
@@ -190,13 +214,17 @@ class _webhook extends \IPS\Dispatcher\Controller
 			return;
 		}
 
-		/* Validate paid amount/currency before approving */
+		/* Validate paid amount before approving.
+		   moneymotion webhooks do not include currency in the checkoutSession
+		   payload — only totalInCents. Currency is locked at checkout creation
+		   time and stored in moneymotion_sessions, so we trust what we stored
+		   and only verify the amount matches. If the webhook does include a
+		   currency field (legacy or expanded payload), we verify it matches. */
 		$paidAmountCents = $this->extractPaidAmountCents( $checkoutSession );
-		$paidCurrency = $this->extractPaidCurrency( $checkoutSession );
 
-		if ( $paidAmountCents === NULL || $paidCurrency === NULL )
+		if ( $paidAmountCents === NULL )
 		{
-			\IPS\Log::log( "moneymotion webhook: missing paid amount/currency for session {$sessionId}; approval blocked", 'moneymotion' );
+			\IPS\Log::log( "moneymotion webhook: missing paid amount for session {$sessionId}; approval blocked", 'moneymotion' );
 			\IPS\Db::i()->update( 'moneymotion_sessions', array(
 				'status' => 'failed',
 				'updated_at' => time(),
@@ -205,17 +233,36 @@ class _webhook extends \IPS\Dispatcher\Controller
 		}
 
 		$expectedAmountCents = (int) $session['amount_cents'];
-		$expectedCurrency = mb_strtoupper( (string) $session['currency'] );
-		$paidCurrency = mb_strtoupper( (string) $paidCurrency );
 
-		if ( $paidAmountCents !== $expectedAmountCents || $paidCurrency !== $expectedCurrency )
+		if ( $paidAmountCents !== $expectedAmountCents )
 		{
-			\IPS\Log::log( "moneymotion webhook: amount/currency mismatch for session {$sessionId}; expected {$expectedAmountCents} {$expectedCurrency}, got {$paidAmountCents} {$paidCurrency}; approval blocked", 'moneymotion' );
+			\IPS\Log::log( "moneymotion webhook: amount mismatch for session {$sessionId}; expected {$expectedAmountCents}, got {$paidAmountCents}; approval blocked", 'moneymotion' );
 			\IPS\Db::i()->update( 'moneymotion_sessions', array(
 				'status' => 'failed',
 				'updated_at' => time(),
 			), array( 'session_id=?', $sessionId ) );
 			return;
+		}
+
+		/* Optional currency check: if the webhook carries a currency field,
+		   verify it matches. moneymotion's current webhook schema does not
+		   include currency, so this is a no-op for them but protects against
+		   future payload changes or misconfigured test environments. */
+		$paidCurrency = $this->extractPaidCurrency( $checkoutSession );
+		if ( $paidCurrency !== NULL )
+		{
+			$expectedCurrency = mb_strtoupper( (string) $session['currency'] );
+			$paidCurrency = mb_strtoupper( (string) $paidCurrency );
+
+			if ( $paidCurrency !== $expectedCurrency )
+			{
+				\IPS\Log::log( "moneymotion webhook: currency mismatch for session {$sessionId}; expected {$expectedCurrency}, got {$paidCurrency}; approval blocked", 'moneymotion' );
+				\IPS\Db::i()->update( 'moneymotion_sessions', array(
+					'status' => 'failed',
+					'updated_at' => time(),
+				), array( 'session_id=?', $sessionId ) );
+				return;
+			}
 		}
 
 		/* Approve the transaction */
@@ -425,9 +472,14 @@ class _webhook extends \IPS\Dispatcher\Controller
 	}
 
 	/**
-	 * Find the moneymotion gateway record
+	 * Find the moneymotion gateway record.
 	 *
-	 * @return \IPS\nexus\Gateway|NULL
+	 * Returns either a full `\IPS\nexus\Gateway` when the Gateway hook is
+	 * loaded, or a `_MoneymotionGatewayStub` when it is not. Callers of this
+	 * method must only rely on the `->settings` property — anything else may
+	 * be absent on the stub path.
+	 *
+	 * @return \IPS\nexus\Gateway|_MoneymotionGatewayStub|NULL
 	 */
 	protected function findGateway()
 	{
@@ -445,11 +497,13 @@ class _webhook extends \IPS\Dispatcher\Controller
 			}
 			catch ( \Exception $e )
 			{
-				/* constructFromData failed (hook not active) - return a
-				   lightweight object with the settings the webhook needs */
-				$obj = new \stdClass;
-				$obj->settings = isset( $gatewayRow['m_settings'] ) ? $gatewayRow['m_settings'] : '{}';
-				return $obj;
+				/* constructFromData failed — the Gateway hook isn't loaded in
+				   this request (hook cache issue, disabled hooks, or hook cache
+				   regeneration in flight). Fall back to a typed stub that
+				   exposes only the fields the webhook actually reads. */
+				return new _MoneymotionGatewayStub(
+					isset( $gatewayRow['m_settings'] ) ? (string) $gatewayRow['m_settings'] : '{}'
+				);
 			}
 		}
 		catch ( \UnderflowException $e )
@@ -464,26 +518,42 @@ class _webhook extends \IPS\Dispatcher\Controller
 	}
 
 	/**
-	 * Get client IP address
+	 * Get client IP address for audit logging.
+	 *
+	 * Returns a string in the form:
+	 *   "203.0.113.50 (via 10.0.0.1)"   — when a proxy header is present
+	 *   "10.0.0.1"                      — when no proxy header is present
+	 *
+	 * Logging BOTH addresses (the forwarded-for claim AND the actual remote
+	 * address) means a spoofed X-Forwarded-For header cannot hide the true
+	 * TCP peer from the audit trail. This matters because X-Forwarded-For
+	 * is trivially forgeable on requests that bypass your proxy.
 	 *
 	 * @return string
 	 */
 	protected function getClientIp()
 	{
-		$ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+		$remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+		$remoteAddr = filter_var( $remoteAddr, FILTER_VALIDATE_IP ) ? $remoteAddr : '0.0.0.0';
 
 		/* Check for proxied IP */
+		$forwardedIp = '';
 		if ( !empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) )
 		{
 			$ips = explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] );
-			$ip = trim( $ips[0] );
+			$forwardedIp = trim( $ips[0] );
 		}
 		elseif ( !empty( $_SERVER['HTTP_CLIENT_IP'] ) )
 		{
-			$ip = $_SERVER['HTTP_CLIENT_IP'];
+			$forwardedIp = $_SERVER['HTTP_CLIENT_IP'];
 		}
 
-		return filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : '0.0.0.0';
+		if ( $forwardedIp !== '' && filter_var( $forwardedIp, FILTER_VALIDATE_IP ) && $forwardedIp !== $remoteAddr )
+		{
+			return "{$forwardedIp} (via {$remoteAddr})";
+		}
+
+		return $remoteAddr;
 	}
 
 	/**
@@ -522,6 +592,9 @@ class _webhook extends \IPS\Dispatcher\Controller
 	/**
 	 * Verify webhook signature
 	 *
+	 * Delegates to the API Client's implementation so the signature algorithm
+	 * has a single source of truth.
+	 *
 	 * @param string $rawBody Raw request body
 	 * @param string $signature Signature from request header
 	 * @param string $secret Webhook signing secret
@@ -529,8 +602,7 @@ class _webhook extends \IPS\Dispatcher\Controller
 	 */
 	protected function verifyWebhookSignature( $rawBody, $signature, $secret )
 	{
-		$computed = base64_encode( hash_hmac( 'sha512', $rawBody, $secret, TRUE ) );
-		return hash_equals( $computed, (string) $signature );
+		return \IPS\moneymotion\Api\Client::verifyWebhookSignature( $rawBody, (string) $signature, $secret );
 	}
 
 	/**
@@ -541,7 +613,10 @@ class _webhook extends \IPS\Dispatcher\Controller
 	 */
 	protected function extractPaidAmountCents( array $checkoutSession )
 	{
-		foreach ( array( 'amountInCents', 'amount_cents', 'amountCents', 'totalAmountInCents', 'total_amount_cents' ) as $key )
+		/* 'totalInCents' is the actual field in moneymotion webhooks per
+		   https://docs.moneymotion.io/webhooks — listed first so it wins
+		   over any legacy aliases that older test payloads may include. */
+		foreach ( array( 'totalInCents', 'amountInCents', 'amount_cents', 'amountCents', 'totalAmountInCents', 'total_amount_cents' ) as $key )
 		{
 			if ( isset( $checkoutSession[ $key ] ) && is_numeric( $checkoutSession[ $key ] ) )
 			{
@@ -591,5 +666,36 @@ class _webhook extends \IPS\Dispatcher\Controller
 		}
 
 		return NULL;
+	}
+}
+
+/**
+ * Minimal gateway stand-in for use when the Gateway hook is not loaded.
+ *
+ * The webhook handler only needs one piece of data from the gateway: the
+ * raw JSON settings string so it can read the webhook secret. When IPS's
+ * hook cache is stale or the hook is otherwise disabled at request time,
+ * `\IPS\nexus\Gateway::constructFromData()` throws because the hooked
+ * `gateways()` table does not know about `moneymotion`. In that case we
+ * build this stub directly from the DB row.
+ *
+ * Callers of `findGateway()` MUST stick to the documented contract: only
+ * the `$settings` property is available. Anything else IPS would normally
+ * expose on a Gateway object (`id`, `testSettings()`, etc.) is deliberately
+ * absent so that misuse fails loudly instead of silently returning wrong
+ * data in the hook-unavailable path.
+ */
+class _MoneymotionGatewayStub
+{
+	/**
+	 * Raw JSON settings string (matches shape of nexus_paymethods.m_settings).
+	 *
+	 * @var string
+	 */
+	public $settings;
+
+	public function __construct( $settings )
+	{
+		$this->settings = (string) $settings;
 	}
 }
